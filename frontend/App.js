@@ -252,7 +252,7 @@ function MainAppNavigator() {
               <View style={[styles.pdpaCheckboxBox, isCheckboxChecked && styles.pdpaCheckboxBoxActive]}>
                 {isCheckboxChecked && <Text style={styles.pdpaCheckIcon}>✓</Text>}
               </View>
-              <Text style={styles.pdpaLabelText}>{disclaimerData.checkboxLabel}</Text>
+              <Text style={styles.pdpaLabelText}>{profileType === 'student' ? disclaimerData.checkboxLabelStudent : disclaimerData.checkboxLabel}</Text>
             </TouchableOpacity>
 
             {!!consentSubmitError && <Text style={styles.pdpaErrorText}>{consentSubmitError}</Text>}
