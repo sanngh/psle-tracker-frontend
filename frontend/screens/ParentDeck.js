@@ -6,6 +6,7 @@ import { getAvatarSource } from '../utils/avatarConfig';
 import AvatarPicker from '../components/AvatarPicker';
 import { validateSingaporePhone } from '../utils/validation';
 import MetricsChartsTab, { resolveALGrade } from '../components/MetricsChartsTab';
+import PrelimsExamTab from '../components/PrelimsExamTab';
 const { filterAssignmentRows, normalizeSubject, uniqueRowsByNameAndSubject } = require('../utils/assignmentData');
 
 const subjectOptions = ['Science', 'Mathematics', 'English'];
@@ -739,6 +740,9 @@ export default function ParentDeck() {
               <TouchableOpacity style={{ flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: activeFeedbackTab === 'Trends' ? '#fff' : 'transparent', borderRadius: 6 }} onPress={() => setActiveFeedbackTab('Trends')}>
                 <Text style={{ fontWeight: '700', color: '#2c3e50', fontSize: 11 }}>📊 Metrics & Charts</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: activeFeedbackTab === 'Prelims' ? '#fff' : 'transparent', borderRadius: 6 }} onPress={() => setActiveFeedbackTab('Prelims')}>
+                <Text style={{ fontWeight: '700', color: '#2c3e50', fontSize: 11 }}>🏆 Prelims</Text>
+              </TouchableOpacity>
             </View>
 
             {activeFeedbackTab === 'Log' && (
@@ -779,9 +783,12 @@ export default function ParentDeck() {
                 chartType={chartType}
                 setChartType={setChartType}
                 feedbackRows={feedbackRows}
-                subjectExamStats={subjectExamStats}
                 cardStyle={styles.card}
               />
+            )}
+
+            {activeFeedbackTab === 'Prelims' && (
+              <PrelimsExamTab subjectExamStats={subjectExamStats} cardStyle={styles.card} />
             )}
           </ScrollView>
         </View>
