@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Privacy Policy - PSLE Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #1a1a1a; }
+  h1 { font-size: 1.6em; }
+  h2 { font-size: 1.2em; margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f5f5f5; }
+  .fill-in { background: #fff3cd; padding: 1px 4px; }
+  footer { margin-top: 3em; font-size: 0.85em; color: #666; }
+</style>
+</head>
+<body>
+
+<h1>Privacy Policy — PSLE Tracker (Closed Beta)</h1>
+<p><em>Last updated: 1 September 2026</em></p>
+
+<p>PSLE Tracker ("the App") is operated by PSLE Tracker Team ("we", "us", "the Beta Administrator"), based in Singapore. This policy explains what personal data we collect, why, and how it is protected, in accordance with Singapore's <strong>Personal Data Protection Act 2012 (PDPA)</strong>.</p>
+
+<p>The App is currently offered as a <strong>free, closed beta</strong> to a limited group of parent and student testers, and is not yet publicly available on the Play Store / App Store for general download.</p>
+
+<h2>1. What personal data we collect</h2>
+<table>
+<tr><th>Data</th><th>Why we collect it</th><th>Where it is stored</th></tr>
+<tr><td>Mobile phone number (parent's, and the child's if they have a separate linked student account)</td><td>Account login / identity verification</td><td>Turso (managed SQLite database)</td></tr>
+<tr><td>PIN (stored as a one-way hash, never in plain text)</td><td>App login security</td><td>Turso</td></tr>
+<tr><td>Child's academic records entered by the parent/student (subjects, exam scores, syllabus/revision progress)</td><td>Core app function — tracking PSLE preparation</td><td>Turso</td></tr>
+<tr><td>Uploaded photos of test papers / worksheets ("evidence")</td><td>Core app function — proof of completed revision</td><td>Cloudflare R2 (object storage)</td></tr>
+</table>
+
+<p><strong>We do not collect:</strong> your name, your child's full name, email address, school name, NRIC, or home address. Parents/students are responsible for ensuring uploaded photos do not accidentally reveal such details, and should crop/redact where possible.</p>
+
+<h2>2. How we use your data</h2>
+<ul>
+  <li>To create and secure your login (phone number + PIN)</li>
+  <li>To let you track syllabus coverage, revision, and exam results for your child</li>
+  <li>We do <strong>not</strong> sell, rent, or share your personal data with any third party for their own marketing or commercial purposes</li>
+</ul>
+
+<h2>3. Where your data is hosted</h2>
+<p>Your data is processed and stored using the following infrastructure providers, acting solely as data processors on our instructions:</p>
+<ul>
+  <li><strong>Google Cloud Run</strong> (Singapore/Asia-Southeast region) — hosts the backend application server</li>
+  <li><strong>Turso</strong> (managed libSQL/SQLite database) — stores account and academic records</li>
+  <li><strong>Cloudflare R2</strong> — stores uploaded evidence photos</li>
+</ul>
+<p>All data in transit between the App and our servers is encrypted using HTTPS/TLS.</p>
+
+<h2>4. Data retention and annual purge</h2>
+<p>This beta program operates on an annual cycle. On or before <strong>31 December</strong> each year, all accounts, phone numbers, academic records, and photos collected during that calendar year are <strong>permanently and irreversibly deleted</strong> from our servers.</p>
+
+<h2>5. Your rights under the PDPA</h2>
+<p>You may, at any time:</p>
+<ul>
+  <li>Withdraw your consent to data collection</li>
+  <li>Request a copy of the personal data we hold about you</li>
+  <li>Request correction or deletion of your personal data</li>
+</ul>
+<p>To exercise any of these rights, contact the Beta Administrator at singh.iitr2004@gmail.com. Deletion requests are actioned within 30 days.</p>
+
+<h2>6. Children's data</h2>
+<p>The App is used by parents/legal guardians on behalf of their children, or directly by students under parental consent. A parent or legal guardian must provide consent before any student account is activated, and that consent explicitly covers the collection of the child's own mobile phone number (where a separate student account is linked) and the upload of photos of the child's test papers/worksheets for progress tracking. We do not knowingly collect data directly from a child without such consent.</p>
+
+<h2>7. Security</h2>
+<p>We apply reasonable technical safeguards, including encrypted transport (HTTPS), hashed credentials (PINs are never stored in plain text), and access-controlled cloud infrastructure, to protect your data against unauthorised access, loss, or misuse.</p>
+
+<h2>8. Changes to this policy</h2>
+<p>We may update this policy as the App evolves. Material changes will be communicated to registered users by email before they take effect.</p>
+
+<h2>9. Contact us</h2>
+<p>For any privacy questions, consent withdrawal, or data deletion requests:</p>
+<p>PSLE Tracker Team<br>
+Contact: singh.iitr2004@gmail.com<br>
+Singapore</p>
+
+<footer>
+This policy applies to the PSLE Tracker mobile application and is governed by the laws of the Republic of Singapore, including the Personal Data Protection Act 2012.
+</footer>
+
+</body>
+</html>

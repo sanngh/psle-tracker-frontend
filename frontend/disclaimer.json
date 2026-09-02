@@ -1,0 +1,14 @@
+{
+  "title": "PERSONAL DATA PROTECTION ACT (PDPA) CONSENT FOR PSLE EDTECH BETA",
+  "version": "1.0.0",
+  "introduction": "By clicking \"I Consent and Agree\", you acknowledge and agree that your mobile phone number, your child's mobile phone number (if they have a linked student account), and photos of your child's test papers/worksheets uploaded to track their mistakes and revision progress will be collected, used, and processed by PSLE Tracker Team (\"Beta Administrator\") for the purpose of administering this free EdTech Closed Beta program, in accordance with Singapore's Personal Data Protection Act 2012 (PDPA).",
+  "sectionTitle": "Key Terms of this Beta Program:",
+  "terms": [
+    "1. Purpose: Phone numbers (yours and your child's, if applicable) are used strictly to validate secure login and manage account sessions. Uploaded photos of test papers are used solely to track your child's mistakes and revision progress.",
+    "2. Data Minimisation: We do not collect names, email addresses, or school details. Please ensure uploaded test paper images do not accidentally display your child's name or school.",
+    "3. Storage & Security: Your account details and data are securely hosted on Google Cloud (Cloud Run), with your account database on Turso and uploaded photos on Cloudflare R2, all encrypted in transit via HTTPS.",
+    "4. Annual Data Purge & Export: This beta lifecycle resets on 31 December of each year. On or before 31 December, all accounts, phone records, and images collected during that calendar year will be permanently and irreversibly purged from our servers.",
+    "5. Withdrawal of Consent: You can withdraw your consent or request immediate deletion at any time by contacting the Beta Administrator at singh.iitr2004@gmail.com. Your account will be removed within 30 days."
+  ],
+  "checkboxLabel": "I confirm that I am the parent/legal guardian of the child using this application, and I explicitly consent to the collection and processing of my child's mobile phone number (if applicable) and photos of their test papers/mistakes uploaded for progress tracking, as described above."
+}
