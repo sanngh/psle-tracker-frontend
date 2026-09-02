@@ -38,6 +38,7 @@ export default function ParentDeck() {
   const [expandedMistakeTitle, setExpandedMistakeTitle] = useState(null);
   const [customExamName, setCustomExamName] = useState('');
   const [customExamSubject, setCustomExamSubject] = useState('Science');
+  const [customExamPaperType, setCustomExamPaperType] = useState('Paper1');
   const [customRevisionName, setCustomRevisionName] = useState('');
   const [customRevisionSubject, setCustomRevisionSubject] = useState('Science');
   const [customRevisionLevel, setCustomRevisionLevel] = useState('P6');
@@ -211,13 +212,14 @@ export default function ParentDeck() {
       const res = await fetch(`${API_URL}/exams/add`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userKey: userKey.trim(), name: customExamName.trim(), subject: customExamSubject })
+        body: JSON.stringify({ userKey: userKey.trim(), name: customExamName.trim(), subject: customExamSubject, paperType: customExamPaperType })
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result?.error || 'Unable to add exam.');
       Alert.alert('Exam Added', 'The new prelim paper is now available for the child.');
       setCustomExamName('');
       setCustomExamSubject('Science');
+      setCustomExamPaperType('Paper1');
       refreshData();
     } catch (e) {
       console.error(e);
@@ -482,6 +484,13 @@ export default function ParentDeck() {
                 </TouchableOpacity>
               ))}
             </View>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+              {['Paper1', 'Paper2', 'Custom'].map(pType => (
+                <TouchableOpacity key={`ptype-${pType}`} style={{ backgroundColor: customExamPaperType === pType ? '#0f766e' : '#f4f6f6', padding: 8, borderRadius: 6, flex: 1, alignItems: 'center' }} onPress={() => setCustomExamPaperType(pType)}>
+                  <Text style={{ color: customExamPaperType === pType ? '#fff' : '#2c3e50', fontSize: 11, fontWeight: '700' }}>{pType === 'Paper1' ? 'Paper 1' : pType === 'Paper2' ? 'Paper 2' : 'Custom'}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <TouchableOpacity style={styles.btn} onPress={handleAddCustomExam}>
               <Text style={{ color: '#fff', fontWeight: '700' }}>Add Custom Exam</Text>
             </TouchableOpacity>
@@ -509,6 +518,7 @@ export default function ParentDeck() {
               <View key={exam.id} style={[styles.card, { backgroundColor: exam.assigned === 0 ? '#fff' : '#fdfefe', borderLeftWidth: 4, borderLeftColor: exam.assigned === 0 ? '#3498db' : (exam.status === 'Completed' ? '#2ecc71' : '#e67e22'), marginBottom: 8, marginRight: 6, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12 }]}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={{ fontWeight: '700', color: '#2c3e50', fontSize: 13 }}>{exam.title || exam.name}</Text>
+                  <Text style={{ fontSize: 10, color: '#0f766e', fontWeight: '700', marginTop: 2 }}>{exam.paperType === 'Paper2' ? '📄 Paper 2' : exam.paperType === 'Custom' ? '📄 Custom' : '📄 Paper 1'}</Text>
                   <Text style={{ fontSize: 11, color: '#7f8c8d', marginTop: 2 }}>Status: {exam.assigned === 0 ? '🚫 Pending' : `⚡ ${exam.status}`}</Text>
                   {exam.status === 'Completed' && <Text style={{ fontSize: 11, color: '#2ecc71', fontWeight: '700', marginTop: 2 }}>Marks: {exam.score} / {exam.totalScore}</Text>}
                 </View>

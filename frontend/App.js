@@ -47,10 +47,10 @@ function MainAppNavigator() {
     const subscription = NativeAppState.addEventListener('change', nextState => {
       const previousState = nativeAppStateRef.current;
       nativeAppStateRef.current = nextState;
+      // Don't end the session on backgrounding: this session row also backs the Authorization
+      // bearer token, so ending it here invalidated the token and broke every request on resume.
       if (nextState === 'active' && previousState !== 'active') {
-        startUserSession(phone, profileType).catch(error => console.error('Session resume failed:', error));
-      } else if (previousState === 'active' && nextState !== 'active') {
-        endUserSession(`app_${nextState}`).catch(error => console.error('Session end failed:', error));
+        heartbeatUserSession().catch(error => console.error('Session heartbeat failed:', error));
       }
     });
 
