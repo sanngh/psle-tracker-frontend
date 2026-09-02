@@ -29,16 +29,16 @@
 <tr><th>Data</th><th>Why we collect it</th><th>Where it is stored</th></tr>
 <tr><td>Mobile phone number (parent's, and the child's if they have a separate linked student account)</td><td>Account login / identity verification</td><td>Turso (managed SQLite database)</td></tr>
 <tr><td>PIN (stored as a one-way hash, never in plain text)</td><td>App login security</td><td>Turso</td></tr>
-<tr><td>Child's academic records entered by the parent/student (subjects, exam scores, syllabus/revision progress)</td><td>Core app function — tracking PSLE preparation</td><td>Turso</td></tr>
+<tr><td>Practice paper marks entered by the parent/student (subject, score, and completion date for prelims/practice exam papers, plus syllabus/revision progress) — not official school academic records</td><td>Core app function — tracking PSLE practice/revision progress</td><td>Turso</td></tr>
 <tr><td>Uploaded photos of test papers / worksheets ("evidence")</td><td>Core app function — proof of completed revision</td><td>Cloudflare R2 (object storage)</td></tr>
 </table>
 
-<p><strong>We do not collect:</strong> your name, your child's full name, email address, school name, NRIC, or home address. Parents/students are responsible for ensuring uploaded photos do not accidentally reveal such details, and should crop/redact where possible.</p>
+<p><strong>We do not collect:</strong> your name, your child's full name, email address, school name, NRIC, home address, or any official school academic records/transcripts. The App only stores marks entered for practice/prelim papers the child has completed at home, plus revision progress. Parents/students are responsible for ensuring uploaded photos do not accidentally reveal such details, and should crop/redact where possible.</p>
 
 <h2>2. How we use your data</h2>
 <ul>
   <li>To create and secure your login (phone number + PIN)</li>
-  <li>To let you track syllabus coverage, revision, and exam results for your child</li>
+  <li>To let you track syllabus coverage, revision progress, and practice/prelim paper marks for your child (not official school records)</li>
   <li>We do <strong>not</strong> sell, rent, or share your personal data with any third party for their own marketing or commercial purposes</li>
 </ul>
 
