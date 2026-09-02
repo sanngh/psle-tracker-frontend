@@ -3,7 +3,7 @@ import { Text, View, TouchableOpacity } from 'react-native';
 import Svg, { Circle, G, Path } from 'react-native-svg';
 import { subjectChartColors } from './MetricsChartsTab';
 
-const prelimsChartTypeOptions = ['Bar', 'Pie', 'Line'];
+const prelimsChartTypeOptions = ['Bar', 'Pie', 'Heatmap'];
 
 export default function PrelimsExamTab({ subjectExamStats, cardStyle }) {
   const [chartType, setChartType] = useState('Bar');
@@ -35,16 +35,36 @@ export default function PrelimsExamTab({ subjectExamStats, cardStyle }) {
           </View>
         )}
 
-        {chartType === 'Line' && (
-          <View style={{ height: 140, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around', borderBottomWidth: 2, borderBottomColor: '#bdc3c7', paddingBottom: 5 }}>
-            {subjectExamStats.map(stat => (
-              <View key={stat.subject} style={{ alignItems: 'center', width: '30%' }}>
-                <Text style={{ fontSize: 10, color: stat.averagePercentage !== null ? '#2c3e50' : '#bdc3c7', marginBottom: 4 }}>{stat.averagePercentage !== null ? `${stat.averagePercentage.toFixed(0)}%` : '-'}</Text>
-                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: stat.averagePercentage !== null ? subjectChartColors[stat.subject] : '#eaeded' }} />
-                <View style={{ height: `${stat.averagePercentage || 3}%`, width: 2, backgroundColor: stat.averagePercentage !== null ? subjectChartColors[stat.subject] : '#eaeded', marginTop: 4 }} />
-                <Text style={{ fontSize: 10, color: '#34495e', fontWeight: '700', marginTop: 6 }}>{stat.subject}</Text>
-              </View>
-            ))}
+        {chartType === 'Heatmap' && (
+          <View>
+            <View style={{ flexDirection: 'row' }}>
+              <View style={{ width: 70 }} />
+              <Text style={{ width: 64, fontSize: 9, fontWeight: '700', color: '#34495e', textAlign: 'center' }}>First</Text>
+              <Text style={{ width: 64, fontSize: 9, fontWeight: '700', color: '#34495e', textAlign: 'center' }}>Latest</Text>
+              <Text style={{ width: 64, fontSize: 9, fontWeight: '700', color: '#34495e', textAlign: 'center' }}>Change</Text>
+            </View>
+            {subjectExamStats.map(stat => {
+              const firstPaper = stat.papers[0];
+              const latestPaper = stat.papers[stat.papers.length - 1];
+              const firstPct = firstPaper ? (Number(firstPaper.score) / Number(firstPaper.totalScore)) * 100 : null;
+              const latestPct = latestPaper ? (Number(latestPaper.score) / Number(latestPaper.totalScore)) * 100 : null;
+              const delta = firstPct !== null && latestPct !== null && stat.papers.length > 1 ? latestPct - firstPct : null;
+              const cell = (pct) => (
+                <View style={{ width: 64, height: 32, marginHorizontal: 2, borderRadius: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: pct !== null ? subjectChartColors[stat.subject] : '#f4f6f6', opacity: pct !== null ? Math.max(0.15, Math.min(1, pct / 100)) : 1 }}>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: pct !== null ? '#fff' : '#bdc3c7' }}>{pct !== null ? `${pct.toFixed(0)}%` : '-'}</Text>
+                </View>
+              );
+              return (
+                <View key={stat.subject} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                  <Text style={{ width: 70, fontSize: 10, fontWeight: '700', color: '#34495e' }}>{stat.subject}</Text>
+                  {cell(firstPct)}
+                  {cell(latestPct)}
+                  <View style={{ width: 64, height: 32, marginHorizontal: 2, borderRadius: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: delta === null ? '#f4f6f6' : delta > 0 ? '#eafaf1' : delta < 0 ? '#fdedec' : '#f4f6f6' }}>
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: delta === null ? '#bdc3c7' : delta > 0 ? '#27ae60' : delta < 0 ? '#e74c3c' : '#7f8c8d' }}>{delta === null ? '-' : `${delta > 0 ? '▲' : delta < 0 ? '▼' : '='} ${Math.abs(delta).toFixed(0)}%`}</Text>
+                  </View>
+                </View>
+              );
+            })}
           </View>
         )}
 

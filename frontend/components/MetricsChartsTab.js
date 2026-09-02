@@ -1,7 +1,7 @@
-import React from 'react';
-import { Text, View, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { Text, View, TouchableOpacity, ScrollView } from 'react-native';
 
-export const chartTypeOptions = ['Bar', 'Line'];
+export const chartTypeOptions = ['Bar', 'Heatmap'];
 export const subjectChartColors = { Science: '#1abc9c', Mathematics: '#9b59b6', English: '#e67e22' };
 
 // Mirrors backend calculateALGrade() thresholds so client-computed subject averages match server-graded single papers.
@@ -19,14 +19,17 @@ export function resolveALGrade(percentage) {
 
 const allMonthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-// Last 4 calendar months ending at the current month, so the chart always reflects recent activity.
+// January through the current calendar month, so the chart reflects the whole year to date.
 function getRecentMonthNames() {
   const currentMonthIndex = new Date().getMonth();
-  return Array.from({ length: 4 }, (_, i) => allMonthNames[(currentMonthIndex - 3 + i + 12) % 12]);
+  return allMonthNames.slice(0, currentMonthIndex + 1);
 }
+
+const subjectLegend = [{ subject: 'Science', short: 'Sci', color: '#1abc9c' }, { subject: 'Mathematics', short: 'Math', color: '#9b59b6' }, { subject: 'English', short: 'Eng', color: '#e67e22' }];
 
 export default function MetricsChartsTab({ chartType, setChartType, feedbackRows, cardStyle }) {
   const recentMonths = getRecentMonthNames();
+  const [selectedSubject, setSelectedSubject] = useState(null);
   return (
     <View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -41,49 +44,64 @@ export default function MetricsChartsTab({ chartType, setChartType, feedbackRows
       </View>
       <View style={{ backgroundColor: '#fcfcfc', padding: 12, borderRadius: 10, marginBottom: 15, borderWidth: 1, borderColor: '#eaeded' }}>
         {chartType === 'Bar' && (
-          <View style={{ height: 140, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around', borderBottomWidth: 2, borderBottomColor: '#bdc3c7', paddingBottom: 5 }}>
-            {recentMonths.map((mth) => {
-              const mthShort = mth.slice(0, 3);
-              const monthRecords = feedbackRows.filter(f => f.month === mth) || [];
-              const getSubjectScore = (subName) => {
-                const records = monthRecords.filter(f => f.subject === subName && Number.isFinite(Number(f.score)));
-                if (records.length === 0) return 0;
-                return records.reduce((total, record) => total + Number(record.score), 0) / records.length;
-              };
-              const sciScore = getSubjectScore('Science');
-              const mathScore = getSubjectScore('Mathematics');
-              const engScore = getSubjectScore('English');
-              return (
-                <View key={mthShort} style={{ alignItems: 'center', width: '22%' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 100, width: '100%', justifyContent: 'space-between', gap: 2 }}>
-                    {[{ score: sciScore, color: '#1abc9c' }, { score: mathScore, color: '#9b59b6' }, { score: engScore, color: '#e67e22' }].map((item, index) => (
-                      <View key={index} style={{ height: 100, justifyContent: 'flex-end', alignItems: 'center' }}>
-                        <Text style={{ fontSize: 8, color: item.score ? item.color : '#bdc3c7', marginBottom: 2 }}>{item.score ? item.score.toFixed(1) : '-'}</Text>
-                        <View style={{ height: `${item.score || 5}%`, width: 7, backgroundColor: item.score ? item.color : '#eaeded', borderRadius: 2 }} />
-                      </View>
-                    ))}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={{ height: 140, flexDirection: 'row', alignItems: 'flex-end', borderBottomWidth: 2, borderBottomColor: '#bdc3c7', paddingBottom: 5 }}>
+              {recentMonths.map((mth) => {
+                const mthShort = mth.slice(0, 3);
+                const monthRecords = feedbackRows.filter(f => f.month === mth) || [];
+                const getSubjectScore = (subName) => {
+                  const records = monthRecords.filter(f => f.subject === subName && Number.isFinite(Number(f.score)));
+                  if (records.length === 0) return 0;
+                  return records.reduce((total, record) => total + Number(record.score), 0) / records.length;
+                };
+                const bars = subjectLegend
+                  .filter(entry => !selectedSubject || selectedSubject === entry.subject)
+                  .map(entry => ({ ...entry, score: getSubjectScore(entry.subject) }));
+                return (
+                  <View key={mthShort} style={{ alignItems: 'center', width: 60 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 100, width: '100%', justifyContent: 'space-between', gap: 2 }}>
+                      {bars.map((item) => (
+                        <View key={item.subject} style={{ height: 100, justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <Text style={{ fontSize: 8, color: item.score ? item.color : '#bdc3c7', marginBottom: 2 }}>{item.score ? item.score.toFixed(1) : '-'}</Text>
+                          <View style={{ height: `${item.score || 5}%`, width: 7, backgroundColor: item.score ? item.color : '#eaeded', borderRadius: 2 }} />
+                        </View>
+                      ))}
+                    </View>
+                    <Text style={{ fontSize: 10, color: '#34495e', fontWeight: '700', marginTop: 6 }}>{mthShort}</Text>
                   </View>
-                  <Text style={{ fontSize: 10, color: '#34495e', fontWeight: '700', marginTop: 6 }}>{mthShort}</Text>
-                </View>
-              );
-            })}
-          </View>
+                );
+              })}
+            </View>
+          </ScrollView>
         )}
-        {chartType === 'Line' && (
-          <View style={{ height: 140, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around', borderBottomWidth: 2, borderBottomColor: '#bdc3c7', paddingBottom: 5 }}>
-            {recentMonths.map((mth) => {
-              const monthRecords = feedbackRows.filter(f => f.month === mth && Number.isFinite(Number(f.score))) || [];
-              const average = monthRecords.length > 0 ? monthRecords.reduce((total, record) => total + Number(record.score), 0) / monthRecords.length : 0;
-              return (
-                <View key={mth} style={{ alignItems: 'center', width: '22%' }}>
-                  <Text style={{ fontSize: 9, color: average ? '#2c3e50' : '#bdc3c7', marginBottom: 3 }}>{average ? average.toFixed(1) : '-'}</Text>
-                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: average ? '#3498db' : '#eaeded' }} />
-                  <View style={{ height: `${average || 3}%`, width: 2, backgroundColor: average ? '#3498db' : '#eaeded', marginTop: 4 }} />
-                  <Text style={{ fontSize: 10, color: '#34495e', fontWeight: '700', marginTop: 6 }}>{mth.slice(0, 3)}</Text>
-                </View>
-              );
-            })}
-          </View>
+        {chartType === 'Heatmap' && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View>
+              <View style={{ flexDirection: 'row' }}>
+                <View style={{ width: 44 }} />
+                {recentMonths.map((mth) => (
+                  <Text key={mth} style={{ width: 36, fontSize: 9, fontWeight: '700', color: '#34495e', textAlign: 'center' }}>{mth.slice(0, 3)}</Text>
+                ))}
+              </View>
+              {subjectLegend
+                .filter(entry => !selectedSubject || selectedSubject === entry.subject)
+                .map(entry => (
+                  <View key={entry.subject} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                    <Text style={{ width: 44, fontSize: 9, fontWeight: '700', color: entry.color }}>{entry.short}</Text>
+                    {recentMonths.map((mth) => {
+                      const records = feedbackRows.filter(f => f.month === mth && f.subject === entry.subject && Number.isFinite(Number(f.score)));
+                      const score = records.length > 0 ? records.reduce((total, record) => total + Number(record.score), 0) / records.length : null;
+                      const intensity = score !== null ? Math.max(0.15, Math.min(1, score / 100)) : 0;
+                      return (
+                        <View key={mth} style={{ width: 36, height: 28, marginHorizontal: 1, borderRadius: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: score !== null ? entry.color : '#f4f6f6', opacity: score !== null ? intensity : 1 }}>
+                          <Text style={{ fontSize: 8, fontWeight: '700', color: score !== null ? '#fff' : '#bdc3c7' }}>{score !== null ? score.toFixed(0) : '-'}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
+            </View>
+          </ScrollView>
         )}
         {chartType === 'Pie' && (
           <View style={{ alignItems: 'center' }}>
@@ -154,11 +172,13 @@ export default function MetricsChartsTab({ chartType, setChartType, feedbackRows
           </View>
         )}
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 10 }}>
-          <Text style={{ fontSize: 10, color: '#1abc9c' }}> Sci</Text>
-          <Text style={{ fontSize: 10, color: '#9b59b6' }}> Math</Text>
-          <Text style={{ fontSize: 10, color: '#e67e22' }}> Eng</Text>
+          {subjectLegend.map(entry => (
+            <TouchableOpacity key={entry.subject} onPress={() => setSelectedSubject(selectedSubject === entry.subject ? null : entry.subject)} style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: selectedSubject === entry.subject ? '#eaeded' : 'transparent' }}>
+              <Text style={{ fontSize: 10, color: entry.color, fontWeight: selectedSubject === entry.subject ? '700' : '400' }}> {entry.short}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
-        <Text style={{ fontSize: 10, color: '#b9770e', fontStyle: 'italic', textAlign: 'center', marginTop: 8 }}>Bars show the average of School, Tuition, and Self marks. Student entries are listed below in amber.</Text>
+        <Text style={{ fontSize: 10, color: '#b9770e', fontStyle: 'italic', textAlign: 'center', marginTop: 8 }}>Bars show the average of School, Tuition, and Self marks. Tap Sci/Math/Eng above to filter. Student entries are listed below in amber.</Text>
       </View>
 
       <Text style={{ fontSize: 13, fontWeight: '700', color: '#2c3e50', marginBottom: 8 }}>👨‍🏫 External Instructor Tracks</Text>

@@ -335,7 +335,6 @@ export default function ParentDeck() {
         Alert.alert('Feedback Recorded', 'Teacher evaluation logged.');
         setFeedbackRating('');
         setFeedbackNotes('');
-        setIsParentDrawerOpen(false);
         refreshData();
       }
     } catch (e) { console.error(e); }
