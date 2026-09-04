@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { AppState as NativeAppState, StyleSheet, View, Text, TouchableOpacity, ScrollView, Modal, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // Ensure this package is installed
 import { AppProvider, AppContext } from './context/AppContext';
 import { useDashboardData } from './hooks/useDashboardData';
@@ -14,7 +15,10 @@ import StudentDeck from './screens/StudentDeck';
 import ParentDeck from './screens/ParentDeck';
 
 // Directly read the data from your json file cleanly without heavy external md packages
-import disclaimerData from './disclaimer.json'; 
+import disclaimerData from './disclaimer.json';
+
+// Keep the native splash visible until the first screen is ready to paint, since nothing else hides it.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function MainAppNavigator() {
   // Added phone (or equivalent identifier your context exposes upon login)
@@ -81,6 +85,13 @@ function MainAppNavigator() {
     const timerId = setInterval(updatePsleCountdown, 60000);
     return () => clearInterval(timerId);
   }, []);
+
+  // Hide the native splash once we know which screen to show (login/onboarding/dashboard/etc).
+  useEffect(() => {
+    if (appState === 'login' || appState === 'onboarding' || appState === 'pin-setup' || appState === 'pin-verify' || !isConsentCheckPending) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [appState, isConsentCheckPending]);
 
   // Intercepting Effect: the database is the source of truth for consent; AsyncStorage is only an offline cache
   useEffect(() => {
