@@ -18,12 +18,12 @@
 
 ## Accounts to set up (external)
 - [x] Expo/EAS account — `eas login`, then `eas init` (done: project linked, `owner: sanngh`, `projectId` written to `app.json`)
-- [ ] Google Play Developer account ($25 one-time)
+- [x] Google Play Developer account ($25 one-time) — account created
 - [ ] Apple Developer Program membership ($99/year)
 
 ## Store listing/compliance content (manual)
-- [ ] Publicly hosted privacy policy URL, matching what `disclaimer.json` states
-- [ ] Google Play: Data Safety form, content rating questionnaire, target-audience classification
+- [x] Publicly hosted privacy policy URL, matching what `disclaimer.json` states — hosted via htmlpreview.github.io, URL recorded in `releasetoprod.md`
+- [ ] Google Play: Data Safety form, content rating questionnaire, target-audience classification — content drafted in `releasetoprod.md`, not yet submitted in Play Console
 - [ ] Apple: App Privacy "nutrition label" (disclose phone number + photo collection)
 
 ## Build & release flow (once the above is done)
