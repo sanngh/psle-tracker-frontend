@@ -18,7 +18,6 @@
     "react-native": "0.86.3",
     "react-native-paper": "^5.15.3",
     "react-native-safe-area-context": "~5.7.0",
-    "react-native-svg": "15.15.4",
-    "undefined": "\\"
+    "react-native-svg": "15.15.4"
   }
 }
