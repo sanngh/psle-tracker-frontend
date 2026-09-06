@@ -5,7 +5,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // Ensure this package is installed
 import { AppProvider, AppContext } from './context/AppContext';
 import { useDashboardData } from './hooks/useDashboardData';
-import { API_BASE_URL, SESSION_HEARTBEAT_INTERVAL_MS } from './appConfig';
+import { API_BASE_URL, SESSION_HEARTBEAT_INTERVAL_MS, INACTIVITY_TIMEOUT_MS } from './appConfig';
 
 import LoginView from './components/LoginView';
 import OnboardingView from './components/OnboardingView';
@@ -22,9 +22,11 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function MainAppNavigator() {
   // Added phone (or equivalent identifier your context exposes upon login)
-  const { appState, profileType, setProfileType, setDashboardData, phone, startUserSession, heartbeatUserSession, endUserSession } = useContext(AppContext);
+  const { appState, profileType, setProfileType, setDashboardData, phone, startUserSession, heartbeatUserSession, endUserSession, logout } = useContext(AppContext);
   const [countdownText, setCountdownText] = useState('Calculating...');
   const nativeAppStateRef = useRef(NativeAppState.currentState);
+  const lastActivityAtRef = useRef(Date.now());
+  const recordActivity = () => { lastActivityAtRef.current = Date.now(); };
   
   // PDPA Legal Blocker States
   const [showPdpaModal, setShowPdpaModal] = useState(false);
@@ -63,6 +65,19 @@ function MainAppNavigator() {
       subscription.remove();
     };
   }, [appState, phone, profileType, startUserSession, heartbeatUserSession, endUserSession]);
+
+  // Auto-logout after a period of no touch activity while the dashboard is open.
+  useEffect(() => {
+    if (appState !== 'dashboard') return undefined;
+    recordActivity();
+    const idleCheckInterval = setInterval(() => {
+      if (Date.now() - lastActivityAtRef.current >= INACTIVITY_TIMEOUT_MS) {
+        endUserSession('idle_timeout').catch(error => console.error('Session end on idle timeout failed:', error));
+        logout();
+      }
+    }, 15000);
+    return () => clearInterval(idleCheckInterval);
+  }, [appState, endUserSession, logout]);
 
   // PSLE Exam Countdown Utility Function
   useEffect(() => {
@@ -234,7 +249,7 @@ function MainAppNavigator() {
   }
 
   return (
-    <SafeAreaView style={styles.baseContainer}>
+    <SafeAreaView style={styles.baseContainer} onStartShouldSetResponderCapture={() => { recordActivity(); return false; }}>
       {/* PDPA Fullscreen Compliance Blocker View */}
       <Modal visible={showPdpaModal} animationType="slide" transparent={false}>
         <SafeAreaView style={styles.pdpaContainer}>
