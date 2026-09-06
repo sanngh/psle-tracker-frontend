@@ -1,16 +1,27 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { AppContext } from '../context/AppContext';
 
 export default function PinVerifyView() {
-  const { API_URL, userKey, setAppState, setUserKey, setAuthToken } = useContext(AppContext);
+  const { API_URL, userKey, setAppState, setUserKey, setAuthToken, pinLockedHint, setPinLockedHint } = useContext(AppContext);
   const [pin, setPin] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [checkingStatus, setCheckingStatus] = useState(true);
-  const [locked, setLocked] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(pinLockedHint === null);
+  const [locked, setLocked] = useState(Boolean(pinLockedHint));
   const [attemptsRemaining, setAttemptsRemaining] = useState(null);
+  // Snapshot the hint once on mount so clearing it afterwards can't re-trigger this effect.
+  const initialPinLockedHintRef = useRef(pinLockedHint);
 
   useEffect(() => {
+    // LoginView already fetched pin/status right before switching to this screen; reuse
+    // that result instead of hitting the same endpoint again.
+    if (initialPinLockedHintRef.current !== null) {
+      setLocked(Boolean(initialPinLockedHintRef.current));
+      setCheckingStatus(false);
+      setPinLockedHint(null);
+      return undefined;
+    }
+
     let cancelled = false;
     const checkStatus = async () => {
       try {

@@ -1,7 +1,7 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useRef } from 'react';
 import { StyleSheet, Text, View, ScrollView, FlatList, TouchableOpacity, TextInput, Alert, ActivityIndicator, Image, Modal } from 'react-native';
 import { AppContext } from '../context/AppContext';
-import { REVISION_LEVELS } from '../appConfig';
+import { REVISION_LEVELS, LINKED_CHILDREN_REFRESH_INTERVAL_MS, MANUAL_REFRESH_COOLDOWN_MS } from '../appConfig';
 import { getAvatarSource } from '../utils/avatarConfig';
 import AvatarPicker from '../components/AvatarPicker';
 import { validateSingaporePhone } from '../utils/validation';
@@ -14,7 +14,7 @@ const revisionLevelOptions = REVISION_LEVELS.length > 0 ? REVISION_LEVELS : ['P4
 const monthOptions = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October'];
 
 export default function ParentDeck() {
-  const { API_URL, userKey, avatar, setAvatar, dashboardData, refreshData, setAuthToken } = useContext(AppContext);
+  const { API_URL, userKey, avatar, setAvatar, dashboardData, refreshData, requestParentDashboardLoad, setDashboardData, setAuthToken } = useContext(AppContext);
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
   const [isAvatarLabelVisible, setIsAvatarLabelVisible] = useState(false);
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
@@ -28,6 +28,8 @@ export default function ParentDeck() {
   const [selectedFeedbackMonth, setSelectedFeedbackMonth] = useState('January');
   const [feedbackRating, setFeedbackRating] = useState('');
   const [feedbackNotes, setFeedbackNotes] = useState('');
+  const [examSearchText, setExamSearchText] = useState('');
+  const [selectedExamPaperTypeFilter, setSelectedExamPaperTypeFilter] = useState('All');
   const [isParentDrawerOpen, setIsParentDrawerOpen] = useState(false);
   const [isParentSyllabusDrawerOpen, setIsParentSyllabusDrawerOpen] = useState(false);
   const [isAnalyticsDrawerOpen, setIsAnalyticsDrawerOpen] = useState(false);
@@ -44,8 +46,27 @@ export default function ParentDeck() {
   const [customRevisionLevel, setCustomRevisionLevel] = useState('P6');
   const [childPhoneInput, setChildPhoneInput] = useState('');
   const [linkedChildren, setLinkedChildren] = useState([]);
+  const [selectedLinkedStudentPhone, setSelectedLinkedStudentPhone] = useState('');
   const [isLinkFormOpen, setIsLinkFormOpen] = useState(false);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
+  const isLoadingDashboardRef = useRef(false); // synchronous guard against fast double-taps before re-render
+  const lastManualRefreshAtRef = useRef(0);
   const [showLinkedChildPhone, setShowLinkedChildPhone] = useState(false);
+  const PAGE_SIZE = 10;
+  const [visibleExamCount, setVisibleExamCount] = useState(PAGE_SIZE);
+  const [visibleRevisionCount, setVisibleRevisionCount] = useState(PAGE_SIZE);
+  const [visibleMistakeCount, setVisibleMistakeCount] = useState(PAGE_SIZE);
+
+  const handleManualRefresh = () => {
+    const elapsedMs = Date.now() - lastManualRefreshAtRef.current;
+    if (lastManualRefreshAtRef.current && elapsedMs < MANUAL_REFRESH_COOLDOWN_MS) {
+      const remainingMinutes = Math.ceil((MANUAL_REFRESH_COOLDOWN_MS - elapsedMs) / 60000);
+      Alert.alert('Please Wait', `You can refresh again in about ${remainingMinutes} minute${remainingMinutes === 1 ? '' : 's'}.`);
+      return;
+    }
+    lastManualRefreshAtRef.current = Date.now();
+    refreshData(true);
+  };
 
   const refreshLinkedChildren = async () => {
     if (!userKey) return;
@@ -64,10 +85,35 @@ export default function ParentDeck() {
   };
 
   React.useEffect(() => {
+    if (!userKey) return undefined;
+
     refreshLinkedChildren();
-    const intervalId = setInterval(refreshLinkedChildren, 10000);
+    const intervalId = setInterval(refreshLinkedChildren, LINKED_CHILDREN_REFRESH_INTERVAL_MS);
     return () => clearInterval(intervalId);
   }, [API_URL, userKey]);
+
+  React.useEffect(() => {
+    if (!linkedChildren.length) {
+      setSelectedLinkedStudentPhone('');
+      return;
+    }
+
+    const hasSelectedChild = linkedChildren.some(child => child.student_phone === selectedLinkedStudentPhone);
+    if (!hasSelectedChild) {
+      const defaultPhone = linkedChildren.length === 1 ? linkedChildren[0].student_phone : '';
+      setSelectedLinkedStudentPhone(defaultPhone);
+    }
+  }, [linkedChildren, selectedLinkedStudentPhone]);
+
+  React.useEffect(() => {
+    if (!linkedChildren.length) {
+      setSelectedLinkedStudentPhone('');
+      return;
+    }
+
+    const defaultStudent = linkedChildren.length === 1 ? linkedChildren[0].student_phone : '';
+    setSelectedLinkedStudentPhone(prev => prev && linkedChildren.some(child => child.student_phone === prev) ? prev : defaultStudent);
+  }, [linkedChildren]);
 
   const handleUnlockAccount = async (targetPhone) => {
     try {
@@ -104,19 +150,62 @@ export default function ParentDeck() {
     }
   };
 
-  if (!dashboardData) {
-    return <ActivityIndicator style={{ marginTop: 40 }} size="large" color="#4F46E5" />;
-  }
+  const shouldShowLoadPrompt = !dashboardData;
 
-  const alerts = dashboardData.alerts || dashboardData.notifications || [];
-  const examRows = dashboardData.exams || [];
-  const revisionTopics = dashboardData.revisionTopics || [];
+  const alerts = dashboardData?.alerts || dashboardData?.notifications || [];
+  const examRows = dashboardData?.exams || [];
+  const revisionTopics = dashboardData?.revisionTopics || [];
   const uniqueExamRows = uniqueRowsByNameAndSubject(examRows);
   const uniqueRevisionTopics = uniqueRowsByNameAndSubject(revisionTopics);
   const assignmentExamRows = uniqueExamRows;
   const assignmentRevisionTopics = uniqueRevisionTopics;
   const assignableRevisionTopics = filterAssignmentRows(assignmentRevisionTopics, selectedRevisionSubject);
   const assignableExamRows = filterAssignmentRows(assignmentExamRows, selectedExamSubject);
+
+  const filteredExamRows = React.useMemo(() => {
+    const normalizedSearch = examSearchText.trim().toLowerCase();
+    return assignableExamRows.filter((exam) => {
+      const examName = String(exam.name || exam.title || '').toLowerCase();
+      const paperType = String(exam.paperType || '').toLowerCase();
+      const matchesSearch = !normalizedSearch || examName.includes(normalizedSearch) || paperType.includes(normalizedSearch);
+      const matchesPaperType = selectedExamPaperTypeFilter === 'All' || paperType === selectedExamPaperTypeFilter.toLowerCase();
+      return matchesSearch && matchesPaperType;
+    });
+  }, [assignableExamRows, examSearchText, selectedExamPaperTypeFilter]);
+
+  React.useEffect(() => {
+    setVisibleExamCount(PAGE_SIZE);
+    setVisibleRevisionCount(PAGE_SIZE);
+    setVisibleMistakeCount(PAGE_SIZE);
+  }, [selectedExamSubject, selectedRevisionSubject, examSearchText, selectedExamPaperTypeFilter]);
+
+  const sortedExamRows = React.useMemo(() => filteredExamRows.slice().sort((first, second) => {
+    if (first.assigned === 0 && second.assigned !== 0) return -1;
+    if (first.assigned !== 0 && second.assigned === 0) return 1;
+    if (first.status === 'In Progress' && second.status === 'Completed') return -1;
+    if (first.status === 'Completed' && second.status !== 'Completed') return 1;
+    return 0;
+  }), [filteredExamRows]);
+
+  const visibleExamRows = sortedExamRows.slice(0, visibleExamCount);
+  const visibleRevisionRows = assignableRevisionTopics.slice(0, visibleRevisionCount);
+  const visibleMistakeRows = (dashboardData?.mistakes || []).slice(0, visibleMistakeCount);
+
+  const loadMoreExams = () => {
+    if (visibleExamCount >= sortedExamRows.length) return;
+    setVisibleExamCount(prev => Math.min(prev + PAGE_SIZE, sortedExamRows.length));
+  };
+
+  const loadMoreRevisionTopics = () => {
+    if (visibleRevisionCount >= assignableRevisionTopics.length) return;
+    setVisibleRevisionCount(prev => Math.min(prev + PAGE_SIZE, assignableRevisionTopics.length));
+  };
+
+  const loadMoreMistakes = () => {
+    const total = (dashboardData.mistakes || []).length;
+    if (visibleMistakeCount >= total) return;
+    setVisibleMistakeCount(prev => Math.min(prev + PAGE_SIZE, total));
+  };
 
   // Averages every completed prelim paper's percentage per subject, then derives one AL grade from that average.
   const completedExamRows = uniqueExamRows.filter(exam => String(exam.status || '').trim() === 'Completed' && Number.isFinite(Number(exam.totalScore)) && Number(exam.totalScore) > 0);
@@ -134,13 +223,13 @@ export default function ParentDeck() {
       alGrade: averagePercentage !== null ? resolveALGrade(averagePercentage) : null
     };
   });
-  const mistakeRows = dashboardData.mistakes || [];
-  const feedbackRows = dashboardData.feedback || [];
+  const mistakeRows = dashboardData?.mistakes || [];
+  const feedbackRows = dashboardData?.feedback || [];
   const isRevisionSeason = new Date().getMonth() >= 5;
 
   const topicCoverage = subjectOptions.reduce((coverage, subject) => {
     const subjectKey = subject.toLowerCase();
-    const syllabusTopics = (dashboardData.syllabusProgress || []).filter(topic => (topic.subject || '').trim().toLowerCase() === subjectKey);
+    const syllabusTopics = (dashboardData?.syllabusProgress || []).filter(topic => (topic.subject || '').trim().toLowerCase() === subjectKey);
     const revisionRows = revisionTopics.filter(topic => (topic.subject || '').trim().toLowerCase() === subjectKey);
     coverage[subject] = {
       syllabusCovered: syllabusTopics.filter(topic => Number(topic.progress) > 0).length,
@@ -151,6 +240,22 @@ export default function ParentDeck() {
     return coverage;
   }, {});
 
+  const clearLocalAlerts = (dismissedType, dismissedId = null) => {
+    setDashboardData((prev) => {
+      if (!prev) return prev;
+      const currentAlerts = prev.alerts || prev.notifications || [];
+      const nextAlerts = dismissedId === null
+        ? []
+        : currentAlerts.filter((alert) => !(alert.type === dismissedType && Number(alert.id) === Number(dismissedId)));
+
+      return {
+        ...prev,
+        alerts: nextAlerts,
+        notifications: nextAlerts
+      };
+    });
+  };
+
   const handleDismissNotification = async (id, type) => {
     try {
       const route = type === 'syllabus' ? 'syllabus/dismiss-alert' : (type === 'revision' ? 'revisions/dismiss-alert' : 'exams/dismiss-alert');
@@ -159,7 +264,7 @@ export default function ParentDeck() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, userKey: userKey.trim() })
       });
-      if (res.ok) refreshData();
+      if (res.ok) clearLocalAlerts(type, id);
     } catch (e) { console.error(e); }
   };
 
@@ -170,7 +275,7 @@ export default function ParentDeck() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userKey: userKey.trim() })
       });
-      if (res.ok) refreshData();
+      if (res.ok) clearLocalAlerts(null);
     } catch (e) { console.error(e); }
   };
 
@@ -182,8 +287,7 @@ export default function ParentDeck() {
         body: JSON.stringify({ id: examId, userKey })
       });
       if (res.ok) {
-        Alert.alert('Success', 'Exam profile successfully assigned to child.');
-        refreshData();
+        refreshData(true);
       }
     } catch (e) { console.error(e); }
   };
@@ -196,8 +300,7 @@ export default function ParentDeck() {
         body: JSON.stringify({ id: revisionId, userKey: userKey.trim() })
       });
       if (res.ok) {
-        Alert.alert('Revision Assigned', 'Revision topic is now visible in the student view.');
-        refreshData();
+        refreshData(true);
       }
     } catch (e) { console.error(e); }
   };
@@ -220,7 +323,7 @@ export default function ParentDeck() {
       setCustomExamName('');
       setCustomExamSubject('Science');
       setCustomExamPaperType('Paper1');
-      refreshData();
+      refreshData(true);
     } catch (e) {
       console.error(e);
       Alert.alert('Add Failed', e.message || 'Unable to add exam right now.');
@@ -245,7 +348,7 @@ export default function ParentDeck() {
       setCustomRevisionName('');
       setCustomRevisionSubject('Science');
       setCustomRevisionLevel('P6');
-      refreshData();
+      refreshData(true);
     } catch (e) {
       console.error(e);
       Alert.alert('Add Failed', e.message || 'Unable to add revision item right now.');
@@ -278,7 +381,7 @@ export default function ParentDeck() {
       Alert.alert('Linked', 'Student account is now linked to this parent profile.');
       setChildPhoneInput('');
       await refreshLinkedChildren();
-      await refreshData();
+      await refreshData(true);
     } catch (e) {
       console.error(e);
       Alert.alert('Link Failed', e.message || 'Unable to link to the student account.');
@@ -308,7 +411,7 @@ export default function ParentDeck() {
         Alert.alert('Success', 'Report compiled.');
         setFeedbackForm({ subject: 'Science', source: 'School', score: '', remarks: '' });
         setIsParentDrawerOpen(false);
-        refreshData();
+        refreshData(true);
       }
     } catch (e) { console.error(e); }
     finally { setSubmittingFeedback(false); }
@@ -337,10 +440,73 @@ export default function ParentDeck() {
         Alert.alert('Feedback Recorded', 'Teacher evaluation logged.');
         setFeedbackRating('');
         setFeedbackNotes('');
-        refreshData();
+        refreshData(true);
       }
     } catch (e) { console.error(e); }
   };
+
+  if (shouldShowLoadPrompt) {
+    const parentChildOptions = linkedChildren.map(child => child.student_phone);
+    const effectiveSelectedPhone = selectedLinkedStudentPhone || parentChildOptions[0] || '';
+    const loadTargetPhone = effectiveSelectedPhone || '';
+
+    const handleLoadLinkedChildData = async () => {
+      if (!loadTargetPhone || isLoadingDashboardRef.current) return;
+      isLoadingDashboardRef.current = true;
+      setIsLoadingDashboard(true);
+      try {
+        const result = await requestParentDashboardLoad(loadTargetPhone);
+        if (result?.error) {
+          Alert.alert('Load Failed', result.error);
+        }
+      } finally {
+        isLoadingDashboardRef.current = false;
+        setIsLoadingDashboard(false);
+      }
+    };
+
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: '#2c3e50', marginBottom: 12 }}>Parent dashboard is ready to load.</Text>
+        {parentChildOptions.length > 0 && (
+          <View style={{ width: '100%', marginBottom: 12 }}>
+            <Text style={{ fontSize: 12, color: '#475569', marginBottom: 6 }}>Mapped student</Text>
+            {parentChildOptions.length === 1 ? (
+              <View style={{ backgroundColor: '#ecfdf5', borderWidth: 1, borderColor: '#a7f3d0', borderRadius: 8, padding: 12 }}>
+                <Text style={{ color: '#065f46', fontWeight: '700', fontSize: 13 }}>{loadTargetPhone}</Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {parentChildOptions.map(phone => (
+                  <TouchableOpacity
+                    key={phone}
+                    onPress={() => setSelectedLinkedStudentPhone(phone)}
+                    style={{
+                      backgroundColor: phone === selectedLinkedStudentPhone ? '#1abc9c' : '#e2e8f0',
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 8,
+                      marginRight: 8,
+                      marginBottom: 8
+                    }}
+                  >
+                    <Text style={{ color: phone === selectedLinkedStudentPhone ? '#fff' : '#1f2937', fontWeight: '700', fontSize: 12 }}>{phone}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+        <TouchableOpacity
+          style={{ backgroundColor: loadTargetPhone && !isLoadingDashboard ? '#1abc9c' : '#94a3b8', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 8 }}
+          onPress={handleLoadLinkedChildData}
+          disabled={!loadTargetPhone || isLoadingDashboard}
+        >
+          {isLoadingDashboard ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Load linked child data</Text>}
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -421,26 +587,30 @@ export default function ParentDeck() {
 
       <Text style={styles.heading}>🚨 System Diagnostics Warnings</Text>
 
+      <TouchableOpacity style={{ backgroundColor: '#16a085', padding: 10, borderRadius: 6, alignItems: 'center', marginBottom: 8 }} onPress={handleManualRefresh}>
+        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>🔄 Refresh Data</Text>
+      </TouchableOpacity>
+
       <View style={{ flexDirection: 'row', gap: 8, marginVertical: 6 }}>
-        <TouchableOpacity style={{ backgroundColor: '#34495e', padding: 12, borderRadius: 8, flex: 1, alignItems: 'center', borderWidth: 1, borderColor: '#bdc3c7' }} onPress={() => { setFeedbackSource('School'); refreshData(); setIsParentDrawerOpen(true); }}>
+        <TouchableOpacity style={{ backgroundColor: '#34495e', padding: 12, borderRadius: 8, flex: 1, alignItems: 'center', borderWidth: 1, borderColor: '#bdc3c7' }} onPress={() => { setFeedbackSource('School'); setIsParentDrawerOpen(true); }}>
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>📊 Open Feedback & Charts</Text>
         </TouchableOpacity>
       </View>
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-        <TouchableOpacity style={{ backgroundColor: '#2c3e50', padding: 12, borderRadius: 8, flex: 1, alignItems: 'center', borderWidth: 1, borderColor: '#9b59b6' }} onPress={() => { setSelectedFeedbackSubject('Science'); refreshData(); setIsParentSyllabusDrawerOpen(true); }}>
+        <TouchableOpacity style={{ backgroundColor: '#2c3e50', padding: 12, borderRadius: 8, flex: 1, alignItems: 'center', borderWidth: 1, borderColor: '#9b59b6' }} onPress={() => { setSelectedFeedbackSubject('Science'); setIsParentSyllabusDrawerOpen(true); }}>
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 8 }}>📐 View Syllabus Topics Track</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={{ backgroundColor: '#2c3e50', padding: 12, borderRadius: 8, flex: 1, alignItems: 'center', borderWidth: 1, borderColor: '#9b59b6' }} onPress={() => { refreshData(); setIsAnalyticsDrawerOpen(true); }}>
+        <TouchableOpacity style={{ backgroundColor: '#2c3e50', padding: 12, borderRadius: 8, flex: 1, alignItems: 'center', borderWidth: 1, borderColor: '#9b59b6' }} onPress={() => setIsAnalyticsDrawerOpen(true)}>
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 8 }}>📈 View Subject Analytics</Text>
         </TouchableOpacity>
       </View>
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
         {isRevisionSeason && (
-          <TouchableOpacity style={styles.assignmentButton} onPress={() => { refreshData(); setIsCustomRevisionFormOpen(false); setIsRevisionDrawerOpen(true); }}>
+          <TouchableOpacity style={styles.assignmentButton} onPress={() => { setIsCustomRevisionFormOpen(false); setIsRevisionDrawerOpen(true); }}>
             <Text style={styles.assignmentButtonText}>🔁 Assign Revision Topics</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity style={styles.assignmentButton} onPress={() => { refreshData(); setIsCustomExamFormOpen(false); setIsExamAssignmentDrawerOpen(true); }}>
+        <TouchableOpacity style={styles.assignmentButton} onPress={() => { setIsCustomExamFormOpen(false); setIsExamAssignmentDrawerOpen(true); }}>
           <Text style={styles.assignmentButtonText}>📊 Assign Prelims Exam Papers</Text>
         </TouchableOpacity>
       </View>
@@ -461,6 +631,35 @@ export default function ParentDeck() {
         ))}
       </View>
       <View style={{ backgroundColor: '#f8fafc', borderRadius: 10, borderWidth: 1, borderColor: '#dbeafe', padding: 12, marginBottom: 14 }}>
+        <Text style={{ fontSize: 12, fontWeight: '700', color: '#1d4ed8', marginBottom: 8 }}>🔎 Search prelim papers</Text>
+        <TextInput
+          style={[styles.input, { marginBottom: 10 }]}
+          value={examSearchText}
+          onChangeText={setExamSearchText}
+          placeholder="Search by paper name or paper type"
+          autoCapitalize="none"
+        />
+        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+          {['All', 'Paper1', 'Paper2', 'Custom'].map((paperType) => (
+            <TouchableOpacity
+              key={`exam-filter-${paperType}`}
+              style={{
+                backgroundColor: selectedExamPaperTypeFilter === paperType ? '#1d4ed8' : '#f4f6f6',
+                padding: 8,
+                borderRadius: 6,
+                flex: 1,
+                alignItems: 'center',
+                borderWidth: 1,
+                borderColor: selectedExamPaperTypeFilter === paperType ? '#1d4ed8' : '#eaeded'
+              }}
+              onPress={() => setSelectedExamPaperTypeFilter(paperType)}
+            >
+              <Text style={{ color: selectedExamPaperTypeFilter === paperType ? '#fff' : '#2c3e50', fontSize: 10, fontWeight: '700' }}>
+                {paperType === 'Paper1' ? 'Paper 1' : paperType === 'Paper2' ? 'Paper 2' : paperType === 'Custom' ? 'Custom' : 'All'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => setIsCustomExamFormOpen(previous => !previous)}
@@ -499,21 +698,18 @@ export default function ParentDeck() {
       </View>
       <View style={{ flex: 1, minHeight: 220, maxHeight: 280, backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#eaeded', padding: 8, elevation: 1, marginBottom: 15 }}>
         <FlatList
-          data={assignableExamRows.slice().sort((first, second) => {
-            if (first.assigned === 0 && second.assigned !== 0) return -1;
-            if (first.assigned !== 0 && second.assigned === 0) return 1;
-            if (first.status === 'In Progress' && second.status === 'Completed') return -1;
-            if (first.status === 'Completed' && second.status !== 'Completed') return 1;
-            return 0;
-          })}
+          data={visibleExamRows}
           key={`prelims-${selectedExamSubject}`}
-          extraData={selectedExamSubject}
+          extraData={[selectedExamSubject, visibleExamCount]}
           keyExtractor={exam => `${selectedExamSubject}-${exam.id}`}
           style={{ flex: 1 }}
           persistentScrollbar
           nestedScrollEnabled
           showsVerticalScrollIndicator
           contentContainerStyle={{ flexGrow: 1, paddingBottom: 15 }}
+          onEndReached={loadMoreExams}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={visibleExamRows.length < sortedExamRows.length ? <Text style={{ color: '#7f8c8d', textAlign: 'center', paddingVertical: 8 }}>Loading more papers...</Text> : null}
           renderItem={({ item: exam }) => (
               <View key={exam.id} style={[styles.card, { backgroundColor: exam.assigned === 0 ? '#fff' : '#fdfefe', borderLeftWidth: 4, borderLeftColor: exam.assigned === 0 ? '#3498db' : (exam.status === 'Completed' ? '#2ecc71' : '#e67e22'), marginBottom: 8, marginRight: 6, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12 }]}>
                 <View style={{ flex: 1, marginRight: 8 }}>
@@ -541,35 +737,46 @@ export default function ParentDeck() {
 
       <Text style={styles.heading}>Syllabus Mistakes Error Log</Text>
       <View style={styles.card}>
-        {mistakeRows?.length === 0 ? <Text style={{ color: '#9CA3AF' }}>No errors cataloged.</Text> : mistakeRows?.map(m => {
-          const isExpanded = expandedMistakeTitle === (m.title || m.name);
-          return (
-            <View key={m.title || m.name} style={{ marginBottom: 10, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#e5e7eb' }}>
-              <TouchableOpacity style={{ padding: 12, backgroundColor: '#f4f6f6', flexDirection: 'row', justifyContent: 'space-between' }} onPress={() => setExpandedMistakeTitle(isExpanded ? null : (m.title || m.name))}>
-                <Text style={{ fontWeight: '700', color: '#2c3e50', flex: 1 }}>{m.title || m.name}</Text>
-                <Text style={{ color: '#6b7280', fontWeight: '700' }}>Count: {m.occurrence || 1}</Text>
-              </TouchableOpacity>
-              {isExpanded && (
-                <View style={{ padding: 12, backgroundColor: '#fff' }}>
-                  {m.descriptions?.length > 0 && m.descriptions.map((description, idx) => (
-                    <Text key={`description-${idx}`} style={{ fontSize: 12, color: '#374151', marginBottom: 6 }}>Description {idx + 1}: {description}</Text>
-                  ))}
-                  {m.photos?.length > 0 && (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ marginTop: 10 }}>
-                      {m.photos.map((url, idx) => (
-                        <View key={url} style={{ width: 220 }}>
-                          <Image source={{ uri: url }} style={{ width: 220, height: 160, borderRadius: 6 }} resizeMode="cover" />
-                          <Text style={{ fontSize: 10, color: '#374151', marginTop: 4 }}>{m.photoDescriptions?.[idx] || 'No description provided'}</Text>
-                        </View>
+        {visibleMistakeRows?.length === 0 ? <Text style={{ color: '#9CA3AF' }}>No errors cataloged.</Text> : (
+          <FlatList
+            data={visibleMistakeRows}
+            keyExtractor={(m, index) => `${m.title || m.name || 'mistake'}-${index}`}
+            onEndReached={loadMoreMistakes}
+            onEndReachedThreshold={0.5}
+            scrollEnabled={false}
+            contentContainerStyle={{ paddingBottom: 10 }}
+            ListFooterComponent={visibleMistakeRows.length < (dashboardData.mistakes || []).length ? <Text style={{ color: '#7f8c8d', textAlign: 'center', paddingVertical: 8 }}>Loading more mistakes...</Text> : null}
+            renderItem={({ item: m }) => {
+              const isExpanded = expandedMistakeTitle === (m.title || m.name);
+              return (
+                <View key={m.title || m.name} style={{ marginBottom: 10, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#e5e7eb' }}>
+                  <TouchableOpacity style={{ padding: 12, backgroundColor: '#f4f6f6', flexDirection: 'row', justifyContent: 'space-between' }} onPress={() => setExpandedMistakeTitle(isExpanded ? null : (m.title || m.name))}>
+                    <Text style={{ fontWeight: '700', color: '#2c3e50', flex: 1 }}>{m.title || m.name}</Text>
+                    <Text style={{ color: '#6b7280', fontWeight: '700' }}>Count: {m.occurrence || 1}</Text>
+                  </TouchableOpacity>
+                  {isExpanded && (
+                    <View style={{ padding: 12, backgroundColor: '#fff' }}>
+                      {m.descriptions?.length > 0 && m.descriptions.map((description, idx) => (
+                        <Text key={`description-${idx}`} style={{ fontSize: 12, color: '#374151', marginBottom: 6 }}>Description {idx + 1}: {description}</Text>
                       ))}
-                    </ScrollView>
+                      {m.photos?.length > 0 && (
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ marginTop: 10 }}>
+                          {m.photos.map((url, idx) => (
+                            <View key={url} style={{ width: 220 }}>
+                              <Image source={{ uri: url }} style={{ width: 220, height: 160, borderRadius: 6 }} resizeMode="cover" />
+                              <Text style={{ fontSize: 10, color: '#374151', marginTop: 4 }}>{m.photoDescriptions?.[idx] || 'No description provided'}</Text>
+                            </View>
+                          ))}
+                        </ScrollView>
+                      )}
+                      {(!m.descriptions || m.descriptions.length === 0) && (!m.photos || m.photos.length === 0) && <Text style={{ fontSize: 12, color: '#7f8c8d' }}>No description provided</Text>}
+                    </View>
                   )}
-                  {(!m.descriptions || m.descriptions.length === 0) && (!m.photos || m.photos.length === 0) && <Text style={{ fontSize: 12, color: '#7f8c8d' }}>No description provided</Text>}
                 </View>
-              )}
-            </View>
-          );
-        })}
+              );
+            }}
+          />
+        )}
       </View>
 
       {isParentSyllabusDrawerOpen && (
@@ -698,14 +905,17 @@ export default function ParentDeck() {
 
             <View style={{ height: 320, minHeight: 220, backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#fed7aa', padding: 8 }}>
               <FlatList
-                      data={assignableRevisionTopics}
+                data={visibleRevisionRows}
                 key={`revision-${selectedRevisionSubject}`}
-                extraData={selectedRevisionSubject}
+                extraData={[selectedRevisionSubject, visibleRevisionCount]}
                 keyExtractor={topic => String(topic.id)}
                 style={{ flex: 1 }}
                 contentContainerStyle={{ flexGrow: 1, paddingBottom: 20 }}
                 nestedScrollEnabled
                 showsVerticalScrollIndicator
+                onEndReached={loadMoreRevisionTopics}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={visibleRevisionRows.length < assignableRevisionTopics.length ? <Text style={{ color: '#7f8c8d', textAlign: 'center', paddingVertical: 8 }}>Loading more topics...</Text> : null}
                 renderItem={({ item: topic }) => (
                   <View key={topic.id} style={{ backgroundColor: '#fff', padding: 12, borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: '#3498db', borderLeftWidth: 4 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -5,7 +5,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // Ensure this package is installed
 import { AppProvider, AppContext } from './context/AppContext';
 import { useDashboardData } from './hooks/useDashboardData';
-import { API_BASE_URL } from './appConfig';
+import { API_BASE_URL, SESSION_HEARTBEAT_INTERVAL_MS } from './appConfig';
 
 import LoginView from './components/LoginView';
 import OnboardingView from './components/OnboardingView';
@@ -47,7 +47,7 @@ function MainAppNavigator() {
     startUserSession(phone, profileType).catch(error => console.error('Session start failed:', error));
     const heartbeatInterval = setInterval(() => {
       heartbeatUserSession().catch(error => console.error('Session heartbeat failed:', error));
-    }, 30000);
+    }, SESSION_HEARTBEAT_INTERVAL_MS);
     const subscription = NativeAppState.addEventListener('change', nextState => {
       const previousState = nativeAppStateRef.current;
       nativeAppStateRef.current = nextState;

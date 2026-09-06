@@ -2,7 +2,7 @@ import React, { useState, useContext, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, Modal, Button, Image, ActivityIndicator } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { AppContext } from '../context/AppContext';
-import { REQUIRE_EVIDENCE_LINKING } from '../appConfig';
+import { REQUIRE_EVIDENCE_LINKING, APP_REFRESH_INTERVAL_MS } from '../appConfig';
 import { CONFIDENCE_LEVELS, KEYWORD_TAG_LIMIT } from '../appConfig';
 import { saveImageToAppStorage, addPendingMistake, getPendingMistakes, syncPendingMistakes } from '../utils/localEvidenceStore';
 import { getAvatarSource } from '../utils/avatarConfig';
@@ -69,7 +69,7 @@ export default function StudentDeck() {
     };
 
     loadParentLink();
-    const intervalId = setInterval(loadParentLink, 10000);
+    const intervalId = setInterval(loadParentLink, APP_REFRESH_INTERVAL_MS);
     return () => clearInterval(intervalId);
   }, [API_URL, userKey]);
 
@@ -353,7 +353,6 @@ export default function StudentDeck() {
       });
 
       if (res.ok) {
-        Alert.alert('Exam Logged', 'Thank you for recording your results.');
         setActiveTest(null);
         setScoreInput('');
         refreshData();

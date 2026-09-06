@@ -8,6 +8,7 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.0",
     "expo-file-system": "~57.0.6",
@@ -19,5 +20,9 @@
     "react-native-paper": "^5.15.3",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4"
+  },
+  "devDependencies": {
+    "ansi-escapes": "^7.3.0",
+    "wonka": "^6.3.6"
   }
 }

@@ -4,7 +4,7 @@ import { AppContext } from '../context/AppContext';
 import { validateSingaporePhone } from '../utils/validation';
 
 export default function LoginView() {
-  const { API_URL, setUserKey, setAppState, setProfileType, setAvatar, setAuthToken } = useContext(AppContext);
+  const { API_URL, setUserKey, setAppState, setProfileType, setAvatar, setAuthToken, setPinLockedHint } = useContext(AppContext);
   const [inputPhone, setInputPhone] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -42,6 +42,7 @@ export default function LoginView() {
           body: JSON.stringify({ userKey: cleanPhone })
         });
         const statusData = await statusResponse.json();
+        setPinLockedHint(Boolean(statusData.locked));
         setAppState(statusData.pinSet ? 'pin-verify' : 'pin-setup');
       } else {
         setAppState('onboarding');

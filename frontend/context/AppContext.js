@@ -10,8 +10,12 @@ export const AppProvider = ({ children }) => {
   const [userKey, setUserKey] = useState('');
   const [avatar, setAvatar] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
+  const [parentDashboardLoadRequested, setParentDashboardLoadRequested] = useState(false);
+  const [pinLockedHint, setPinLockedHint] = useState(null);
   const activeSessionIdRef = useRef(null);
   const sessionStartPromiseRef = useRef(null);
+  const dashboardRefreshPromiseRef = useRef(null);
+  const lastDashboardFetchAtRef = useRef(0);
 
   const API_URL = API_BASE_URL;
 
@@ -24,6 +28,9 @@ export const AppProvider = ({ children }) => {
   const logout = useCallback(() => {
     setAuthToken(null);
     setUserKey('');
+    setDashboardData(null);
+    setParentDashboardLoadRequested(false);
+    lastDashboardFetchAtRef.current = 0;
     setAppState('login');
   }, [setAuthToken]);
 
@@ -73,24 +80,54 @@ export const AppProvider = ({ children }) => {
     });
   }, [API_URL, userKey]);
 
-  const refreshData = async () => {
+  const refreshData = async (force = false, selectedStudentPhoneOverride = '') => {
     if (!userKey) return;
+    const shouldSkipParentAutoLoad = profileType === 'parent' && !force && !parentDashboardLoadRequested;
+    if (shouldSkipParentAutoLoad) return;
 
-    try {
-      const response = await fetch(`${API_URL}/dashboard`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userKey, profileType })
-      });
+    if (dashboardRefreshPromiseRef.current) return dashboardRefreshPromiseRef.current;
 
-      if (response.ok) {
-        const data = await response.json();
-        setDashboardData(data);
+    dashboardRefreshPromiseRef.current = (async () => {
+      try {
+        const payload = {
+          userKey,
+          profileType,
+          ...(profileType === 'parent' && selectedStudentPhoneOverride ? { selectedStudentPhone: selectedStudentPhoneOverride } : {})
+        };
+
+        const response = await fetch(`${API_URL}/dashboard`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setDashboardData(data);
+          lastDashboardFetchAtRef.current = Date.now();
+          if (profileType === 'parent') setParentDashboardLoadRequested(true);
+          return data;
+        }
+
+        const errorBody = await response.json().catch(() => null);
+        console.error('Dashboard request failed:', response.status, errorBody?.error);
+        return { error: errorBody?.error || `Dashboard request failed with status ${response.status}.` };
+      } catch (error) {
+        console.error('Data sync failed:', error);
+        return { error: error.message || 'Unable to reach the backend server.' };
+      } finally {
+        dashboardRefreshPromiseRef.current = null;
       }
-    } catch (error) {
-      console.error('Data sync failed:', error);
-    }
+    })();
+
+    return dashboardRefreshPromiseRef.current;
   };
+
+  const requestParentDashboardLoad = useCallback(async (selectedStudentPhoneOverride = '') => {
+    if (parentDashboardLoadRequested && dashboardData) return null;
+    setParentDashboardLoadRequested(true);
+    return refreshData(true, selectedStudentPhoneOverride);
+  }, [dashboardData, parentDashboardLoadRequested, refreshData]);
 
   return (
     <AppContext.Provider value={{
@@ -106,8 +143,11 @@ export const AppProvider = ({ children }) => {
       setAvatar,
       dashboardData,
       setDashboardData,
+      pinLockedHint,
+      setPinLockedHint,
       API_URL,
       refreshData,
+      requestParentDashboardLoad,
       startUserSession,
       heartbeatUserSession,
       endUserSession,
