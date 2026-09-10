@@ -539,20 +539,23 @@ export default function ParentDeck() {
           </TouchableOpacity>
         </View>
 
-        {linkedChildren.map(child => (
-          <View key={child.student_phone} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => setShowLinkedChildPhone(prev => !prev)} style={{ flex: 1 }}>
+        {linkedChildren.length > 0 && (
+          <>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => setShowLinkedChildPhone(prev => !prev)} style={{ marginBottom: 8 }}>
               <Text style={{ color: '#374151', fontSize: 12 }}>
-                🎒 {showLinkedChildPhone ? child.student_phone : 'Tap to reveal student contact'}{child.locked ? ' — 🔒 Locked' : ''}
+                🎒 {showLinkedChildPhone ? linkedChildren.map(child => child.student_phone).join(', ') : 'Tap to reveal student contact'}
               </Text>
             </TouchableOpacity>
-            {child.locked && (
-              <TouchableOpacity style={{ backgroundColor: '#1abc9c', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 }} onPress={() => handleUnlockAccount(child.student_phone)}>
-                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>Unlock</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ))}
+            {showLinkedChildPhone && linkedChildren.map(child => child.locked && (
+              <View key={child.student_phone} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={{ color: '#374151', fontSize: 12 }}>{child.student_phone} — 🔒 Locked</Text>
+                <TouchableOpacity style={{ backgroundColor: '#1abc9c', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 }} onPress={() => handleUnlockAccount(child.student_phone)}>
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>Unlock</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </>
+        )}
 
         {isLinkFormOpen && (
           <>
