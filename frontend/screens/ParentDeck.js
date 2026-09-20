@@ -7,11 +7,86 @@ import AvatarPicker from '../components/AvatarPicker';
 import { validateSingaporePhone } from '../utils/validation';
 import MetricsChartsTab, { resolveALGrade } from '../components/MetricsChartsTab';
 import PrelimsExamTab from '../components/PrelimsExamTab';
+import { getSessionToken } from '../utils/apiClient';
 const { filterAssignmentRows, normalizeSubject, uniqueRowsByNameAndSubject } = require('../utils/assignmentData');
 
 const subjectOptions = ['Science', 'Mathematics', 'English'];
 const revisionLevelOptions = REVISION_LEVELS.length > 0 ? REVISION_LEVELS : ['P4', 'P5', 'P6'];
 const monthOptions = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October'];
+
+const getTimestamp = (value) => {
+  const timestamp = Date.parse(value || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const sortRecentFirst = (first, second) => {
+  const firstDate = first.createdAt || first.completionDate || first.created_at || first.uploadedAt;
+  const secondDate = second.createdAt || second.completionDate || second.created_at || second.uploadedAt;
+  const dateDifference = getTimestamp(secondDate) - getTimestamp(firstDate);
+  return dateDifference || Number(second.id || 0) - Number(first.id || 0);
+};
+
+// Resolve upload paths against the server origin, not the /api route.
+const resolveEvidenceUri = (apiUrl, value) => {
+  const uri = String(value || '').trim();
+  if (!uri) return null;
+
+  const configuredApiUrl = String(apiUrl || '').replace(/\/+$/, '');
+  const serverOrigin = configuredApiUrl.replace(/\/api$/i, '');
+  if (!serverOrigin) return uri;
+
+  if (/^data:/i.test(uri) || /^file:/i.test(uri)) return uri;
+
+  try {
+    const parsedUri = new URL(uri, serverOrigin);
+    // Local upload URLs may have been generated from the backend request host
+    // (for example localhost). Always use the host configured by the app.
+    if (parsedUri.pathname.startsWith('/uploads/')) {
+      const objectKey = parsedUri.pathname.slice('/uploads/'.length);
+      return `${serverOrigin}/media/${objectKey}${parsedUri.search}`;
+    }
+    if (parsedUri.pathname.startsWith('/media/')) {
+      return `${serverOrigin}${parsedUri.pathname}${parsedUri.search}`;
+    }
+    return parsedUri.href;
+  } catch (error) {
+    return `${serverOrigin}/${uri.replace(/^\/+/, '')}`;
+  }
+};
+
+const getEvidenceUrl = (photo) => {
+  if (typeof photo === 'string') return photo;
+  if (!photo || typeof photo !== 'object') return '';
+  return photo.url || photo.uri || photo.photoUrl || photo.photo_url || '';
+};
+
+const EvidenceImage = ({ uri }) => {
+  const [hasLoadError, setHasLoadError] = useState(false);
+  const sessionToken = getSessionToken();
+
+  if (hasLoadError) {
+    return (
+      <View style={styles.evidenceImageError}>
+        <Text style={styles.evidenceImageErrorText}>Image unavailable</Text>
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{
+        uri,
+        ...(sessionToken ? { headers: { Authorization: `Bearer ${sessionToken}` } } : {})
+      }}
+      style={styles.evidenceImage}
+      resizeMode="contain"
+      onError={(error) => {
+        console.error('Evidence image request failed:', uri, error?.nativeEvent?.error || 'unknown error');
+        setHasLoadError(true);
+      }}
+    />
+  );
+};
 
 export default function ParentDeck() {
   const { API_URL, userKey, avatar, setAvatar, dashboardData, refreshData, requestParentDashboardLoad, setDashboardData, setAuthToken } = useContext(AppContext);
@@ -56,6 +131,8 @@ export default function ParentDeck() {
   const [visibleExamCount, setVisibleExamCount] = useState(PAGE_SIZE);
   const [visibleRevisionCount, setVisibleRevisionCount] = useState(PAGE_SIZE);
   const [visibleMistakeCount, setVisibleMistakeCount] = useState(PAGE_SIZE);
+  const [mistakeSubjectFilter, setMistakeSubjectFilter] = useState('All');
+  const [mistakeReviewFilter, setMistakeReviewFilter] = useState('Unreviewed');
 
   const handleManualRefresh = () => {
     const elapsedMs = Date.now() - lastManualRefreshAtRef.current;
@@ -92,6 +169,8 @@ export default function ParentDeck() {
     return () => clearInterval(intervalId);
   }, [API_URL, userKey]);
 
+  // Parent always lands on a single child's dashboard (first linked child by default) —
+  // never the old merged multi-child overview — until they tap another child to switch.
   React.useEffect(() => {
     if (!linkedChildren.length) {
       setSelectedLinkedStudentPhone('');
@@ -100,20 +179,9 @@ export default function ParentDeck() {
 
     const hasSelectedChild = linkedChildren.some(child => child.student_phone === selectedLinkedStudentPhone);
     if (!hasSelectedChild) {
-      const defaultPhone = linkedChildren.length === 1 ? linkedChildren[0].student_phone : '';
-      setSelectedLinkedStudentPhone(defaultPhone);
+      setSelectedLinkedStudentPhone(linkedChildren[0].student_phone);
     }
   }, [linkedChildren, selectedLinkedStudentPhone]);
-
-  React.useEffect(() => {
-    if (!linkedChildren.length) {
-      setSelectedLinkedStudentPhone('');
-      return;
-    }
-
-    const defaultStudent = linkedChildren.length === 1 ? linkedChildren[0].student_phone : '';
-    setSelectedLinkedStudentPhone(prev => prev && linkedChildren.some(child => child.student_phone === prev) ? prev : defaultStudent);
-  }, [linkedChildren]);
 
   const handleUnlockAccount = async (targetPhone) => {
     try {
@@ -177,19 +245,56 @@ export default function ParentDeck() {
     setVisibleExamCount(PAGE_SIZE);
     setVisibleRevisionCount(PAGE_SIZE);
     setVisibleMistakeCount(PAGE_SIZE);
-  }, [selectedExamSubject, selectedRevisionSubject, examSearchText, selectedExamPaperTypeFilter]);
+  }, [selectedExamSubject, selectedRevisionSubject, examSearchText, selectedExamPaperTypeFilter, mistakeSubjectFilter, mistakeReviewFilter]);
 
   const sortedExamRows = React.useMemo(() => filteredExamRows.slice().sort((first, second) => {
     if (first.assigned === 0 && second.assigned !== 0) return -1;
     if (first.assigned !== 0 && second.assigned === 0) return 1;
     if (first.status === 'In Progress' && second.status === 'Completed') return -1;
     if (first.status === 'Completed' && second.status !== 'Completed') return 1;
-    return 0;
+    return sortRecentFirst(first, second);
   }), [filteredExamRows]);
 
   const visibleExamRows = sortedExamRows.slice(0, visibleExamCount);
-  const visibleRevisionRows = assignableRevisionTopics.slice(0, visibleRevisionCount);
-  const visibleMistakeRows = (dashboardData?.mistakes || []).slice(0, visibleMistakeCount);
+  const visibleRevisionRows = assignableRevisionTopics.slice().sort(sortRecentFirst).slice(0, visibleRevisionCount);
+  const filteredMistakeGroups = React.useMemo(() => {
+    return (dashboardData?.mistakes || [])
+      .map(group => {
+        const sourceInstances = group.instances?.length > 0
+          ? group.instances
+          : [{
+            id: group.id || group.title || group.name,
+            description: (group.descriptions || [])[0] || group.description || null,
+            createdAt: group.createdAt || group.created_at || null,
+            reviewed: Boolean(group.reviewed),
+            subject: group.subject || null,
+            sourceLabel: group.sourceLabel || null,
+            photos: group.photos || []
+          }];
+        const instances = sourceInstances
+          .filter(instance => {
+            const matchesReview = mistakeReviewFilter === 'All'
+              || (mistakeReviewFilter === 'Reviewed' ? instance.reviewed : !instance.reviewed);
+            const matchesSubject = mistakeSubjectFilter === 'All'
+              || normalizeSubject(instance.subject) === normalizeSubject(mistakeSubjectFilter);
+            return matchesReview && matchesSubject;
+          })
+          .slice()
+          .sort(sortRecentFirst);
+
+        if (instances.length === 0) return null;
+        return {
+          ...group,
+          occurrence: instances.length,
+          unreviewedCount: instances.filter(instance => !instance.reviewed).length,
+          instances,
+          photos: instances.flatMap(instance => instance.photos || [])
+        };
+      })
+      .filter(Boolean)
+      .sort((first, second) => sortRecentFirst(first.instances[0], second.instances[0]));
+  }, [dashboardData?.mistakes, mistakeReviewFilter, mistakeSubjectFilter]);
+  const visibleMistakeRows = filteredMistakeGroups.slice(0, visibleMistakeCount);
 
   const loadMoreExams = () => {
     if (visibleExamCount >= sortedExamRows.length) return;
@@ -202,7 +307,7 @@ export default function ParentDeck() {
   };
 
   const loadMoreMistakes = () => {
-    const total = (dashboardData.mistakes || []).length;
+    const total = filteredMistakeGroups.length;
     if (visibleMistakeCount >= total) return;
     setVisibleMistakeCount(prev => Math.min(prev + PAGE_SIZE, total));
   };
@@ -258,7 +363,7 @@ export default function ParentDeck() {
 
   const handleDismissNotification = async (id, type) => {
     try {
-      const route = type === 'syllabus' ? 'syllabus/dismiss-alert' : (type === 'revision' ? 'revisions/dismiss-alert' : 'exams/dismiss-alert');
+      const route = type === 'syllabus' ? 'syllabus/dismiss-alert' : (type === 'revision' ? 'revisions/dismiss-alert' : (type === 'mistake' ? 'mistakes/dismiss-alert' : 'exams/dismiss-alert'));
       const res = await fetch(`${API_URL}/${route}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -276,6 +381,26 @@ export default function ParentDeck() {
         body: JSON.stringify({ userKey: userKey.trim() })
       });
       if (res.ok) clearLocalAlerts(null);
+    } catch (e) { console.error(e); }
+  };
+
+  const handleMarkMistakeReviewed = async (instanceId, nextReviewed) => {
+    try {
+      const res = await fetch(`${API_URL}/mistakes/mark-reviewed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: instanceId, userKey: userKey.trim(), reviewed: nextReviewed })
+      });
+      if (!res.ok) return;
+      setDashboardData(prev => {
+        if (!prev) return prev;
+        const nextMistakes = (prev.mistakes || []).map(group => ({
+          ...group,
+          instances: (group.instances || []).map(instance => instance.id === instanceId ? { ...instance, reviewed: nextReviewed } : instance),
+          unreviewedCount: (group.instances || []).filter(instance => instance.id === instanceId ? !nextReviewed : !instance.reviewed).length
+        }));
+        return { ...prev, mistakes: nextMistakes };
+      });
     } catch (e) { console.error(e); }
   };
 
@@ -740,6 +865,22 @@ export default function ParentDeck() {
 
       <Text style={styles.heading}>Syllabus Mistakes Error Log</Text>
       <View style={styles.card}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {['All', ...subjectOptions].map(sub => (
+            <TouchableOpacity key={sub} style={{ backgroundColor: mistakeSubjectFilter === sub ? '#9b59b6' : '#f4f6f6', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6 }} onPress={() => setMistakeSubjectFilter(sub)}>
+              <Text style={{ color: mistakeSubjectFilter === sub ? '#fff' : '#2c3e50', fontWeight: '700', fontSize: 11 }}>{sub}</Text>
+            </TouchableOpacity>
+          ))}
+          {['Unreviewed', 'Reviewed', 'All'].map(reviewFilter => (
+            <TouchableOpacity
+              key={reviewFilter}
+              style={{ backgroundColor: mistakeReviewFilter === reviewFilter ? '#e74c3c' : '#f4f6f6', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6 }}
+              onPress={() => setMistakeReviewFilter(reviewFilter)}
+            >
+              <Text style={{ color: mistakeReviewFilter === reviewFilter ? '#fff' : '#2c3e50', fontWeight: '700', fontSize: 11 }}>{reviewFilter}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
         {visibleMistakeRows?.length === 0 ? <Text style={{ color: '#9CA3AF' }}>No errors cataloged.</Text> : (
           <FlatList
             data={visibleMistakeRows}
@@ -748,31 +889,50 @@ export default function ParentDeck() {
             onEndReachedThreshold={0.5}
             scrollEnabled={false}
             contentContainerStyle={{ paddingBottom: 10 }}
-            ListFooterComponent={visibleMistakeRows.length < (dashboardData.mistakes || []).length ? <Text style={{ color: '#7f8c8d', textAlign: 'center', paddingVertical: 8 }}>Loading more mistakes...</Text> : null}
+            ListFooterComponent={visibleMistakeRows.length < filteredMistakeGroups.length ? <Text style={{ color: '#7f8c8d', textAlign: 'center', paddingVertical: 8 }}>Loading more mistakes...</Text> : null}
             renderItem={({ item: m }) => {
               const isExpanded = expandedMistakeTitle === (m.title || m.name);
               return (
                 <View key={m.title || m.name} style={{ marginBottom: 10, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#e5e7eb' }}>
-                  <TouchableOpacity style={{ padding: 12, backgroundColor: '#f4f6f6', flexDirection: 'row', justifyContent: 'space-between' }} onPress={() => setExpandedMistakeTitle(isExpanded ? null : (m.title || m.name))}>
+                  <TouchableOpacity style={{ padding: 12, backgroundColor: '#f4f6f6', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }} onPress={() => setExpandedMistakeTitle(isExpanded ? null : (m.title || m.name))}>
                     <Text style={{ fontWeight: '700', color: '#2c3e50', flex: 1 }}>{m.title || m.name}</Text>
-                    <Text style={{ color: '#6b7280', fontWeight: '700' }}>Count: {m.occurrence || 1}</Text>
+                    {m.unreviewedCount > 0 && <Text style={{ backgroundColor: '#e74c3c', color: '#fff', fontWeight: '700', fontSize: 10, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, marginRight: 8 }}>{m.unreviewedCount} unreviewed</Text>}
+                    <Text style={{ color: m.occurrence >= 3 ? '#e74c3c' : '#6b7280', fontWeight: '700' }}>Count: {m.occurrence || 1}</Text>
                   </TouchableOpacity>
                   {isExpanded && (
                     <View style={{ padding: 12, backgroundColor: '#fff' }}>
-                      {m.descriptions?.length > 0 && m.descriptions.map((description, idx) => (
-                        <Text key={`description-${idx}`} style={{ fontSize: 12, color: '#374151', marginBottom: 6 }}>Description {idx + 1}: {description}</Text>
-                      ))}
-                      {m.photos?.length > 0 && (
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ marginTop: 10 }}>
-                          {m.photos.map((url, idx) => (
-                            <View key={url} style={{ width: 220 }}>
-                              <Image source={{ uri: url }} style={{ width: 220, height: 160, borderRadius: 6 }} resizeMode="cover" />
-                              <Text style={{ fontSize: 10, color: '#374151', marginTop: 4 }}>{m.photoDescriptions?.[idx] || 'No description provided'}</Text>
-                            </View>
-                          ))}
-                        </ScrollView>
-                      )}
-                      {(!m.descriptions || m.descriptions.length === 0) && (!m.photos || m.photos.length === 0) && <Text style={{ fontSize: 12, color: '#7f8c8d' }}>No description provided</Text>}
+                      {(!m.instances || m.instances.length === 0) && <Text style={{ fontSize: 12, color: '#7f8c8d' }}>No description provided</Text>}
+                      {(m.instances || []).map((instance, idx) => {
+                        const instancePhotos = (instance.photos || instance.photoUrls || [])
+                          .map(getEvidenceUrl)
+                          .filter(Boolean);
+                        const fallbackPhotos = instancePhotos.length === 0 && idx === 0
+                          ? (m.photos || []).map(getEvidenceUrl).filter(Boolean)
+                          : [];
+                        const photoUris = [...new Set([...instancePhotos, ...fallbackPhotos])]
+                          .map(url => resolveEvidenceUri(API_URL, url))
+                          .filter(Boolean);
+
+                        return (
+                        <View key={instance.id || idx} style={{ marginBottom: 12, paddingBottom: 12, borderBottomWidth: idx < m.instances.length - 1 ? 1 : 0, borderBottomColor: '#f1f5f9' }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <Text style={{ fontSize: 11, color: '#9ca3af' }}>{instance.createdAt ? new Date(instance.createdAt).toLocaleString() : 'Date unknown'}{instance.subject ? ` · ${instance.subject}` : ''}</Text>
+                            <TouchableOpacity onPress={() => handleMarkMistakeReviewed(instance.id, !instance.reviewed)}>
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: instance.reviewed ? '#16a34a' : '#e74c3c' }}>{instance.reviewed ? '✅ Reviewed' : 'Mark reviewed'}</Text>
+                            </TouchableOpacity>
+                          </View>
+                          {instance.sourceLabel && <Text style={{ fontSize: 11, color: '#6b7280', fontStyle: 'italic', marginBottom: 4 }}>{instance.sourceLabel}</Text>}
+                          {instance.description && <Text style={{ fontSize: 12, color: '#374151', marginBottom: 6 }}>{instance.description}</Text>}
+                          {photoUris.length > 0 && (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                              {photoUris.map((photoUri, photoIndex) => (
+                                <EvidenceImage key={`${photoUri}-${photoIndex}`} uri={photoUri} />
+                              ))}
+                            </ScrollView>
+                          )}
+                        </View>
+                        );
+                      })}
                     </View>
                   )}
                 </View>
@@ -1034,6 +1194,9 @@ const styles = StyleSheet.create({
   assignmentButtonText: { color: '#2c3e50', fontWeight: '700', fontSize: 11 },
   btn: { backgroundColor: '#1abc9c', padding: 12, borderRadius: 6, alignItems: 'center' },
   input: { borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 6, padding: 8, marginBottom: 8, fontSize: 13, color: '#2c3e50' },
+  evidenceImage: { width: 220, height: 160, borderRadius: 6, backgroundColor: '#f3f4f6' },
+  evidenceImageError: { width: 220, height: 160, borderRadius: 6, backgroundColor: '#fee2e2', justifyContent: 'center', alignItems: 'center' },
+  evidenceImageErrorText: { color: '#991b1b', fontSize: 12, fontWeight: '700' },
   overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end', zIndex: 20, flex: 1, display: 'flex' },
   drawerLarge: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 22, height: '85%', maxHeight: '85%', minHeight: 0, width: '100%', overflow: 'hidden' },
   assignmentDrawer: { display: 'flex' },

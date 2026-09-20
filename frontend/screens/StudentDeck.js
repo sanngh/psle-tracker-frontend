@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { AppContext } from '../context/AppContext';
 import { REQUIRE_EVIDENCE_LINKING, APP_REFRESH_INTERVAL_MS } from '../appConfig';
 import { CONFIDENCE_LEVELS, KEYWORD_TAG_LIMIT } from '../appConfig';
-import { saveImageToAppStorage, addPendingMistake, getPendingMistakes, syncPendingMistakes } from '../utils/localEvidenceStore';
+import { saveImageToAppStorage, addPendingMistake, getPendingMistakes, clearPendingMistakes, syncPendingMistakes } from '../utils/localEvidenceStore';
 import { getAvatarSource } from '../utils/avatarConfig';
 import AvatarPicker from '../components/AvatarPicker';
 
@@ -461,6 +461,31 @@ export default function StudentDeck() {
     }
   };
 
+  const handleDeviceGalleryPick = async () => {
+    const rights = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!rights.granted) {
+      Alert.alert('Permission Denied', 'Photo library access is required to choose an evidence image.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.6,
+      selectionLimit: 1
+    });
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      try {
+        const selectedImage = result.assets[0];
+        const persistedUri = await saveImageToAppStorage(selectedImage.uri, selectedImage.width, selectedImage.height);
+        setSelectedPhotoUri(persistedUri);
+        Alert.alert('Success', 'Gallery image converted and saved on this phone.');
+      } catch (e) {
+        Alert.alert('Storage Error', 'This image format could not be converted on the device. Choose a JPG or PNG image.');
+      }
+    }
+  };
+
   const submitMistakePhotoLogToPC = async () => {
     if (!errorTitle.trim() || !errorDescription.trim() || !selectedPhotoUri || (REQUIRE_EVIDENCE_LINKING && !evidenceTarget)) {
       Alert.alert('Validation Error', 'Select the exam or revision topic this evidence belongs to, then enter a keyword, description, and photo.');
@@ -497,8 +522,10 @@ export default function StudentDeck() {
         Alert.alert('Nothing to Sync', 'No photo evidence is waiting on this device.');
       } else if (result.limited) {
         Alert.alert('Upload Limit Reached', `${result.succeeded} of ${result.total} photo(s) uploaded. The rest are still saved on your phone \u2014 try syncing again later today.`);
+      } else if (result.failed > 0) {
+        Alert.alert('Sync Incomplete', `${result.succeeded} of ${result.total} photo(s) uploaded. ${result.error || 'The remaining photos are still saved on your phone.'}`);
       } else {
-        Alert.alert('Sync Complete', `${result.succeeded} of ${result.total} photo(s) uploaded.${result.failed ? ` ${result.failed} failed, will retry next time.` : ''}`);
+        Alert.alert('Sync Complete', `${result.succeeded} of ${result.total} photo(s) uploaded.`);
       }
       await refreshPendingCount();
       refreshData();
@@ -507,6 +534,26 @@ export default function StudentDeck() {
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const handleClearBufferedEvidence = () => {
+    if (!pendingPhotoCount && !selectedPhotoUri) return;
+    Alert.alert(
+      'Clear Buffered Evidence?',
+      'This removes unsynced photos from this phone. Already-synced evidence is not affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await clearPendingMistakes(userKey, selectedPhotoUri ? [selectedPhotoUri] : []);
+            setSelectedPhotoUri(null);
+            await refreshPendingCount();
+          }
+        }
+      ]
+    );
   };
 
   const dismissAlert = async (id, type) => {
@@ -636,6 +683,11 @@ export default function StudentDeck() {
         <TouchableOpacity style={styles.syncBtn} onPress={handleSyncNow} disabled={isSyncing}>
           {isSyncing ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>🔄 Sync Now</Text>}
         </TouchableOpacity>
+        {(pendingPhotoCount > 0 || selectedPhotoUri) && (
+          <TouchableOpacity style={styles.clearSyncBtn} onPress={handleClearBufferedEvidence} disabled={isSyncing}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>🗑 Clear</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {pendingEvidence.length > 0 && (
@@ -711,9 +763,14 @@ export default function StudentDeck() {
           onChangeText={setErrorDescription}
           multiline
         />
-        <TouchableOpacity style={styles.cameraBtn} onPress={handleDeviceCameraCapture}>
-          <Text style={styles.actionBtnText}>{selectedPhotoUri ? '✅ Buffered' : '📷 Click to Capture'}</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity style={[styles.cameraBtn, { flex: 1 }]} onPress={handleDeviceCameraCapture}>
+            <Text style={styles.actionBtnText}>{selectedPhotoUri ? '✅ Buffered' : '📷 Camera'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.cameraBtn, { flex: 1, backgroundColor: '#2980b9' }]} onPress={handleDeviceGalleryPick}>
+            <Text style={styles.actionBtnText}>🖼️ Galaxy Gallery</Text>
+          </TouchableOpacity>
+        </View>
         {selectedPhotoUri && <View style={{ marginTop: 12 }}><Button title="Click to Save image" color="#2ecc71" onPress={submitMistakePhotoLogToPC} /></View>}
       </View>
 
@@ -913,6 +970,7 @@ const styles = StyleSheet.create({
   cameraBtn: { backgroundColor: '#1abc9c', padding: 12, borderRadius: 6, alignItems: 'center' },
   syncBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2c3e50', padding: 12, borderRadius: 8, gap: 10 },
   syncBtn: { backgroundColor: '#1abc9c', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 6 },
+  clearSyncBtn: { backgroundColor: '#c0392b', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 6 },
   pastTag: { backgroundColor: 'rgba(255,255,255,0.15)', padding: 5, borderRadius: 10, marginRight: 4 },
   evidenceChip: { backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: '#7f8c8d', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 5, marginRight: 5 },
   evidenceChipActive: { backgroundColor: '#1abc9c', borderColor: '#1abc9c' },

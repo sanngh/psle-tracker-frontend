@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { getSessionToken } from './apiClient';
 
 // Photos live in the app's own sandboxed document directory (private per-app storage on both iOS and Android).
 const EVIDENCE_DIR = `${FileSystem.documentDirectory}mistake-evidence/`;
@@ -82,40 +83,66 @@ async function deleteLocalFile(uri) {
   }
 }
 
+export async function clearPendingMistakes(userKey, additionalUris = []) {
+  const queue = await readQueue();
+  const pendingForUser = queue.filter(item => item.userKey === userKey && !item.synced);
+  const uris = [...new Set([
+    ...pendingForUser.map(item => item.localUri),
+    ...additionalUris
+  ].filter(Boolean))];
+
+  await Promise.all(uris.map(deleteLocalFile));
+  await writeQueue(queue.filter(item => item.userKey !== userKey || item.synced));
+  return pendingForUser.length;
+}
+
 // Uploads every not-yet-synced local mistake to the backend, one at a time, using the existing photo endpoint.
 export async function syncPendingMistakes(apiUrl, userKey) {
   const pending = await getPendingMistakes(userKey);
-  const result = { total: pending.length, succeeded: 0, failed: 0, limited: false };
+  const result = { total: pending.length, succeeded: 0, failed: 0, limited: false, error: null };
 
   for (const item of pending) {
     try {
-      const form = new FormData();
-      form.append('title', item.title);
-      form.append('description', item.description);
-      form.append('category', item.category || 'Missing Keywords (OEQ)');
-      form.append('userKey', userKey);
-      if (item.revisionId) form.append('revisionId', String(item.revisionId));
-      if (item.examId) form.append('examId', String(item.examId));
-      form.append('photo', { uri: item.localUri, name: `${item.localId}.jpg`, type: 'image/jpeg' });
+      const fileInfo = await FileSystem.getInfoAsync(item.localUri);
+      if (!fileInfo.exists) {
+        // Evidence file is gone from disk (e.g. cleared cache) — nothing left to upload for this entry.
+        await markMistakeSynced(item.localId);
+        result.failed += 1;
+        result.error = 'A saved photo was missing on this device and was skipped.';
+        continue;
+      }
 
-      const res = await fetch(`${apiUrl}/errors/log-with-photo`, {
-        method: 'POST',
-        body: form,
-        headers: { 'Content-Type': 'multipart/form-data' }
+      const uploadResponse = await FileSystem.uploadAsync(`${apiUrl}/errors/log-with-photo`, item.localUri, {
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'photo',
+        mimeType: 'image/jpeg',
+        parameters: {
+          title: item.title,
+          description: item.description,
+          category: item.category || 'Missing Keywords (OEQ)',
+          userKey,
+          ...(item.revisionId ? { revisionId: String(item.revisionId) } : {}),
+          ...(item.examId ? { examId: String(item.examId) } : {})
+        },
+        headers: getSessionToken() ? { Authorization: `Bearer ${getSessionToken()}` } : {}
       });
+      const responseBody = JSON.parse(uploadResponse.body || '{}');
 
-      if (res.ok) {
+      if (uploadResponse.status >= 200 && uploadResponse.status < 300) {
         await markMistakeSynced(item.localId);
         await deleteLocalFile(item.localUri);
         result.succeeded += 1;
-      } else if (res.status === 429) {
+      } else if (uploadResponse.status === 429) {
         // Rate limit or daily quota hit — stop syncing now, remaining photos stay queued for next attempt.
         result.limited = true;
+        result.error = responseBody?.error || 'Upload limit reached.';
         break;
       } else {
+        result.error = responseBody?.error || `Upload failed with status ${uploadResponse.status}.`;
         result.failed += 1;
       }
     } catch (e) {
+      result.error = e.message || 'Could not reach the server.';
       result.failed += 1;
     }
   }
